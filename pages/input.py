@@ -11,6 +11,11 @@ from utils.ui_helpers import bottom_action_row, bottom_button, is_confirm_pendin
 
 
 def render() -> None:
+    if st.session_state.pop("_do_reset_trip", False):
+        reset_trip_step()
+    if st.session_state.pop("_do_reset_places", False):
+        reset_places_step()
+
     place_service.ensure_default_places()
     place_service.ensure_widget_keys()
     place_service.sync_places_from_widgets()
@@ -399,7 +404,7 @@ def _render_places_actions() -> None:
             cancel_label="취소",
         )
         if action == "confirm":
-            reset_places_step()
+            st.session_state._do_reset_places = True
             st.rerun()
         if action == "pending":
             return
@@ -433,7 +438,7 @@ def _render_trip_actions() -> None:
             cancel_label="취소",
         )
         if action == "confirm":
-            reset_trip_step()
+            st.session_state._do_reset_trip = True
             st.rerun()
         if action == "pending":
             return
