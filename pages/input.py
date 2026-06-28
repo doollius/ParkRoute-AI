@@ -7,7 +7,7 @@ from streamlit_folium import st_folium
 from models.visit_rule import PICK_NONE, RULE_BEFORE, RULE_IMMEDIATE, rule_label
 from services import place_service, visit_rule_service
 from state.session_manager import go_to, reset_all
-from utils.ui_helpers import bottom_action_row, is_confirm_pending, render_confirm_box, request_confirm
+from utils.ui_helpers import bottom_action_row, bottom_button, is_confirm_pending, render_confirm_box, request_confirm
 
 
 def render() -> None:
@@ -405,13 +405,14 @@ def _render_places_actions() -> None:
             return
 
     with bottom_action_row(3) as (left, center, right):
-        if left.button("← 시작 화면"):
+        if bottom_button(left, "← 시작 화면"):
             go_to("start")
             st.rerun()
-        if center.button("초기화"):
+        if bottom_button(center, "초기화"):
             request_confirm("confirm_reset")
             st.rerun()
-        if right.button(
+        if bottom_button(
+            right,
             "다음 →",
             type="primary",
             disabled=not place_service.can_proceed_to_trip_step(),
@@ -438,13 +439,13 @@ def _render_trip_actions() -> None:
     complete_label = "입력 완료 (일부 제외) →" if partial and place_service.validation_errors() else "입력 완료 →"
 
     with bottom_action_row(3) as (left, center, right):
-        if left.button("← 시작 화면"):
+        if bottom_button(left, "← 시작 화면"):
             go_to("start")
             st.rerun()
-        if center.button("초기화"):
+        if bottom_button(center, "초기화"):
             request_confirm("confirm_reset")
             st.rerun()
-        if right.button(complete_label, type="primary", disabled=not place_service.can_complete()):
+        if bottom_button(right, complete_label, type="primary", disabled=not place_service.can_complete()):
             go_to("review")
             st.rerun()
 
