@@ -34,6 +34,8 @@ def render() -> None:
             end_place_id=st.session_state.end_place_id,
             travel_region=st.session_state.get("travel_region", ""),
             optimization_mode=st.session_state.get("optimization_mode", "minimize_walk"),
+            visit_rules=st.session_state.get("visit_rules", []),
+            trip_start_time=st.session_state.get("trip_start_time", "09:00"),
         )
 
         progress.progress(5 / len(steps), text=steps[4])

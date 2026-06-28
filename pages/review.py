@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import streamlit as st
 
+from models.visit_rule import rule_label
 from pages.input import render_places_map
-from services import place_service
+from services import place_service, visit_rule_service
 from state.session_manager import go_to
 
 
@@ -21,6 +22,7 @@ def render() -> None:
     with col1:
         st.markdown(f"**여행 지역:** {region}")
         st.markdown(f"**최적화 모드:** {mode_label}")
+        st.markdown(f"**출발 시각:** {st.session_state.get('trip_start_time', '09:00')}")
         st.markdown(
             f"**출발지:** {_place_summary(start)}"
         )
@@ -42,6 +44,14 @@ def render() -> None:
                 st.caption(f"좌표: {place['lat']:.5f}, {place['lng']:.5f}")
             if place.get("reservation_time"):
                 st.caption(f"예약: {place['reservation_time']}")
+
+    st.divider()
+    rules = st.session_state.get("visit_rules", [])
+    if rules:
+        st.subheader("방문 규칙")
+        labels = visit_rule_service.place_labels()
+        for rule in rules:
+            st.write(f"· {rule_label(rule, labels)}")
 
     st.divider()
     st.subheader("입력 위치 미리보기")

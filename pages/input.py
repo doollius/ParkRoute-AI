@@ -5,8 +5,10 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from models.place import PLACE_TYPES
-from services import place_service
+from models.visit_rule import RULE_BEFORE, RULE_IMMEDIATE, rule_label
+from services import place_service, visit_rule_service
 from state.session_manager import go_to, reset_all
+from utils.time_utils import hhmm_to_minutes
 
 
 def render() -> None:
@@ -22,6 +24,8 @@ def render() -> None:
     st.divider()
     _render_places_section()
     st.divider()
+    _render_visit_rules_section()
+    st.divider()
     _render_route_section()
     st.divider()
     _render_progress()
@@ -30,10 +34,12 @@ def render() -> None:
 
 def _render_travel_section() -> None:
     st.subheader("여행 정보")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.text_input("여행 지역 *", key="travel_region", placeholder="예: 부산")
     with col2:
+        st.text_input("출발 시각 *", key="trip_start_time", placeholder="09:00")
+    with col3:
         st.selectbox(
             "최적화 모드",
             options=["minimize_walk", "minimize_time"],
@@ -99,6 +105,62 @@ def _render_places_section() -> None:
                     st.info("주소 입력 후 자동 확인되거나, '좌표 확인'을 누르세요.")
 
 
+def _render_visit_rules_section() -> None:
+    st.subheader("방문 규칙 (선택)")
+    st.caption("식사 후 카페처럼 **반드시 지켜야 하는 순서**를 지정합니다.")
+
+    visit_rule_service.ensure_rule_widget_keys()
+    options = place_service.place_options()
+    if len(options) < 2:
+        st.info("장소 2개 이상 입력 후 규칙을 추가할 수 있습니다.")
+        return
+
+    ids = [o[0] for o in options]
+    labels = visit_rule_service.place_labels()
+
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+    with col1:
+        from_id = st.selectbox(
+            "선행 장소",
+            ids,
+            format_func=lambda x: labels[x],
+            key="rule_from_pick",
+        )
+    with col2:
+        to_id = st.selectbox(
+            "후행 장소",
+            ids,
+            format_func=lambda x: labels[x],
+            key="rule_to_pick",
+        )
+    with col3:
+        rule_type = st.selectbox(
+            "규칙",
+            [RULE_IMMEDIATE, RULE_BEFORE],
+            format_func=lambda x: "바로 다음" if x == RULE_IMMEDIATE else "다음 (순서만)",
+            key="rule_type_pick",
+        )
+    with col4:
+        st.write("")
+        st.write("")
+        if st.button("+ 규칙 추가", use_container_width=True):
+            visit_rule_service.add_rule(from_id, to_id, rule_type)
+            st.rerun()
+
+    rules = st.session_state.get("visit_rules", [])
+    if rules:
+        for rule in rules:
+            c1, c2 = st.columns([5, 1])
+            with c1:
+                st.write(f"· {rule_label(rule, labels)}")
+            with c2:
+                if st.button("삭제", key=f"rule_del_{rule['id']}"):
+                    visit_rule_service.delete_rule(rule["id"])
+                    st.rerun()
+    else:
+        st.caption("등록된 방문 규칙이 없습니다.")
+
+
 def _render_route_section() -> None:
     st.subheader("출발 · 도착")
     options = place_service.place_options()
@@ -132,13 +194,25 @@ def _render_route_section() -> None:
 def _render_progress() -> None:
     summary = place_service.progress_summary()
     region_ok = bool(str(st.session_state.get("travel_region", "")).strip())
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("여행 지역", "완료" if region_ok else "미입력")
     c2.metric("장소", f"{summary['geocoded_count']}/{summary['place_count']} 좌표확인")
     c3.metric("예약", f"{summary['reservation_count']}건")
-    c4.metric("출발·도착", "설정됨" if st.session_state.get("start_place_id") and st.session_state.get("end_place_id") else "미설정")
+    c4.metric("방문 규칙", f"{len(st.session_state.get('visit_rules', []))}건")
+    c5.metric("출발·도착", "설정됨" if st.session_state.get("start_place_id") and st.session_state.get("end_place_id") else "미설정")
 
     errors = place_service.validation_errors()
+    place_ids = {p["id"] for p in st.session_state.places}
+    errors.extend(
+        visit_rule_service.validation_errors(
+            place_ids,
+            st.session_state.get("start_place_id"),
+            st.session_state.get("end_place_id"),
+        )
+    )
+    trip_start = str(st.session_state.get("trip_start_time", "")).strip()
+    if not hhmm_to_minutes(trip_start):
+        errors.append("출발 시각은 HH:MM 형식이어야 합니다. (예: 09:00)")
     if errors:
         with st.expander("입력 확인 필요", expanded=True):
             for err in errors:

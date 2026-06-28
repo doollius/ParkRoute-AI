@@ -117,6 +117,12 @@ def validation_errors() -> list[str]:
     if not region:
         errors.append("여행 지역을 입력하세요.")
 
+    from utils.time_utils import hhmm_to_minutes
+
+    trip_start = str(st.session_state.get("trip_start_time", "")).strip()
+    if not hhmm_to_minutes(trip_start):
+        errors.append("출발 시각은 HH:MM 형식이어야 합니다.")
+
     if len(st.session_state.places) < 2:
         errors.append("장소는 최소 2개 이상 필요합니다.")
 

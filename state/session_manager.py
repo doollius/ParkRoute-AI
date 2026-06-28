@@ -14,6 +14,7 @@ def init_session() -> None:
         "optimization_mode": "minimize_walk",
         "places": [],
         "visit_rules": [],
+        "trip_start_time": "09:00",
         "route": None,
         "optimized": False,
         "logs": [],

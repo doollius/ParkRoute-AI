@@ -28,6 +28,9 @@ def render() -> None:
             extra = ""
             if stop.get("reservation_time"):
                 extra = f" · 예약 {stop['reservation_time']}"
+            arrival = stop.get("arrival_time")
+            if arrival:
+                extra += f" · 예상 도착 {arrival}"
             st.write(f"**{stop['label']}** — [{stop.get('type', '-')}] {stop.get('name', '')}{extra}")
 
         st.divider()
@@ -36,6 +39,9 @@ def render() -> None:
         c1, c2 = st.columns(2)
         c1.metric("차량", format_duration(summary.get("car_time_sec", 0)))
         c2.metric("도보", format_duration(summary.get("walk_time_sec", 0)))
+        st.caption(f"출발 시각: {route.get('trip_start_time', '09:00')}")
+        if route.get("visit_rules_applied"):
+            st.caption(f"적용된 방문 규칙: {route['visit_rules_applied']}건")
         st.metric("주차장", f"{summary.get('parking_count', 0)}곳")
         if summary.get("total_distance_m"):
             st.caption(f"총 거리 약 {summary['total_distance_m'] // 1000}km")
