@@ -38,76 +38,73 @@ def render() -> None:
 
     parsed = RouteResult.from_dict(route)
     summary = parsed.summary
-    col_left, col_right = st.columns([1, 2])
 
-    with col_left:
-        st.subheader("방문 순서")
-        for stop in parsed.stops:
-            extra = ""
-            if stop.reservation_time:
-                extra = f" · 예약 {stop.reservation_time}"
-            if stop.arrival_time:
-                extra += f" · 예상 도착 {stop.arrival_time}"
-            st.write(f"**{stop.label}** — [{stop.type or '-'}] {stop.name}{extra}")
+    st.subheader("방문 순서")
+    for stop in parsed.stops:
+        extra = ""
+        if stop.reservation_time:
+            extra = f" · 예약 {stop.reservation_time}"
+        if stop.arrival_time:
+            extra += f" · 예상 도착 {stop.arrival_time}"
+        st.write(f"**{stop.label}** — [{stop.type or '-'}] {stop.name}{extra}")
 
+    st.divider()
+    st.subheader("구간별 이동 (TMAP)")
+    for seg in parsed.segments:
+        mode_label = "🚗 차량" if seg.mode == "car" else "🚶 도보"
+        dist = f" · {seg.distance_m // 1000}km" if seg.distance_m >= 1000 else (
+            f" · {seg.distance_m}m" if seg.distance_m else ""
+        )
+        st.caption(
+            f"{seg.from_label} → {seg.to_label}: "
+            f"{mode_label} {format_duration(seg.time_sec)}{dist}"
+        )
+
+    st.divider()
+    st.subheader("경로 지도")
+    _render_route_map(route)
+
+    st.divider()
+    st.subheader("이동 요약")
+    st.metric("총 이동", format_duration(summary.get("total_time_sec", 0)))
+    st.metric("차량", format_duration(summary.get("car_time_sec", 0)))
+    st.metric("도보", format_duration(summary.get("walk_time_sec", 0)))
+    st.caption(f"출발 시각: {route.get('trip_start_time', '09:00')}")
+    if route.get("visit_rules_applied"):
+        st.caption(f"적용된 방문 규칙: {route['visit_rules_applied']}건")
+    st.metric("주차장", f"{summary.get('parking_count', 0)}곳")
+    parking_cost = summary.get("parking_cost_won")
+    if parking_cost:
+        st.metric("예상 주차비", format_won(parking_cost))
+    if summary.get("total_distance_m"):
+        st.caption(f"총 거리 약 {summary['total_distance_m'] // 1000}km")
+
+    if route.get("parkings"):
         st.divider()
-        st.subheader("구간별 이동 (TMAP)")
-        for seg in parsed.segments:
-            mode_label = "🚗 차량" if seg.mode == "car" else "🚶 도보"
-            dist = f" · {seg.distance_m // 1000}km" if seg.distance_m >= 1000 else (
-                f" · {seg.distance_m}m" if seg.distance_m else ""
-            )
-            st.caption(
-                f"{seg.from_label} → {seg.to_label}: "
-                f"{mode_label} {format_duration(seg.time_sec)}{dist}"
-            )
-
-        st.divider()
-        st.subheader("이동 요약")
-        st.metric("총 이동", format_duration(summary.get("total_time_sec", 0)))
-        c1, c2 = st.columns(2)
-        c1.metric("차량", format_duration(summary.get("car_time_sec", 0)))
-        c2.metric("도보", format_duration(summary.get("walk_time_sec", 0)))
-        st.caption(f"출발 시각: {route.get('trip_start_time', '09:00')}")
-        if route.get("visit_rules_applied"):
-            st.caption(f"적용된 방문 규칙: {route['visit_rules_applied']}건")
-        st.metric("주차장", f"{summary.get('parking_count', 0)}곳")
-        parking_cost = summary.get("parking_cost_won")
+        st.subheader("추천 주차장")
+        for p in route["parkings"]:
+            fee = p.get("estimated_cost")
+            if fee is not None:
+                fee_text = f" · 예상 {format_won(fee)}"
+            elif p.get("base_fee"):
+                fee_text = f" · 기본요금 {p['base_fee']}"
+            else:
+                fee_text = ""
+            stay = p.get("stay_minutes")
+            stay_text = f" · 체류 약 {stay}분" if stay else ""
+            st.write(f"**{p['label']}** {p['name']}{fee_text}{stay_text}")
+            if p.get("address"):
+                st.caption(p["address"])
         if parking_cost:
-            st.metric("예상 주차비", format_won(parking_cost))
-        if summary.get("total_distance_m"):
-            st.caption(f"총 거리 약 {summary['total_distance_m'] // 1000}km")
+            st.caption(
+                f"총 예상 주차비 {format_won(parking_cost)} — "
+                "실제 요금은 현장·운영 정책에 따라 달라질 수 있습니다."
+            )
 
-        if route.get("parkings"):
-            st.divider()
-            st.subheader("추천 주차장")
-            for p in route["parkings"]:
-                fee = p.get("estimated_cost")
-                if fee is not None:
-                    fee_text = f" · 예상 {format_won(fee)}"
-                elif p.get("base_fee"):
-                    fee_text = f" · 기본요금 {p['base_fee']}"
-                else:
-                    fee_text = ""
-                stay = p.get("stay_minutes")
-                stay_text = f" · 체류 약 {stay}분" if stay else ""
-                st.write(f"**{p['label']}** {p['name']}{fee_text}{stay_text}")
-                if p.get("address"):
-                    st.caption(p["address"])
-            if parking_cost:
-                st.caption(
-                    f"총 예상 주차비 {format_won(parking_cost)} — "
-                    "실제 요금은 현장·운영 정책에 따라 달라질 수 있습니다."
-                )
-
-        if parsed.explanation:
-            st.divider()
-            st.subheader("AI 추천 이유")
-            st.info(parsed.explanation)
-
-    with col_right:
-        st.subheader("경로 지도")
-        _render_route_map(route)
+    if parsed.explanation:
+        st.divider()
+        st.subheader("AI 추천 이유")
+        st.info(parsed.explanation)
 
     if is_confirm_pending("confirm_home"):
         action = render_confirm_box(
