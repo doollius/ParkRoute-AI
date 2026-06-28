@@ -66,9 +66,19 @@ def _render_places_section() -> None:
             if border:
                 st.markdown(f'<div style="{border}"></div>', unsafe_allow_html=True)
 
-            row1, del_col = st.columns([5, 1])
+            row1, order_col, del_col = st.columns([4, 1, 1])
             with row1:
                 st.markdown(f"**장소 {i + 1}**")
+            with order_col:
+                up_col, down_col = st.columns(2)
+                with up_col:
+                    if st.button("↑", key=f"up_{pid}", disabled=i == 0):
+                        place_service.move_place(pid, -1)
+                        st.rerun()
+                with down_col:
+                    if st.button("↓", key=f"down_{pid}", disabled=i == len(st.session_state.places) - 1):
+                        place_service.move_place(pid, 1)
+                        st.rerun()
             with del_col:
                 if st.button("삭제", key=f"del_{pid}", disabled=len(st.session_state.places) <= 2):
                     place_service.delete_place(pid)

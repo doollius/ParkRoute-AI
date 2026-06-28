@@ -4,21 +4,17 @@ from typing import Any
 
 from constants.config import MAX_GRAPH_NODES
 from optimizer.constraint_builder import map_rules_to_indices
-from optimizer.graph_builder import build_cost_matrix, cluster_by_walk
+from optimizer.graph_builder import build_cost_matrix
 from optimizer.ortools_solver import solve_route_order
-from optimizer.scoring import build_route_summary, choose_segment_mode
+from optimizer.route_reconstruction import build_parking_aware_route
+from optimizer.scoring import build_route_summary
 from services.explanation_service import generate_explanation
 from services.map_service import build_travel_matrix
-from services.parking_service import assign_parking_to_clusters
-from utils.time_utils import check_reservation_feasible, hhmm_to_minutes, minutes_to_hhmm, simulate_arrival_times
+from utils.time_utils import check_reservation_feasible, hhmm_to_minutes
 
 
 class RouteOptimizationError(Exception):
     pass
-
-
-def _place_name(place: dict[str, Any]) -> str:
-    return place.get("normalized_address") or place.get("raw_input") or "장소"
 
 
 def optimize_route(
@@ -72,59 +68,15 @@ def optimize_route(
     if res_errors:
         raise RouteOptimizationError("\n".join(res_errors))
 
-    arrival_times = simulate_arrival_times(order, travel_matrix, trip_start_minutes)
-
-    clusters = cluster_by_walk(travel_matrix)
-    parkings = assign_parking_to_clusters(nodes, clusters, travel_region)
-
-    segments: list[dict[str, Any]] = []
-    stops: list[dict[str, Any]] = []
-    visit_num = 0
-
-    for pos, node_idx in enumerate(order):
-        node = nodes[node_idx]
-        is_start = node_idx == start_idx and pos == 0
-        is_end = node_idx == end_idx and pos == len(order) - 1
-
-        if is_start:
-            label = "S"
-        elif is_end:
-            label = "E"
-        else:
-            visit_num += 1
-            label = str(visit_num)
-
-        stops.append(
-            {
-                "id": node["id"],
-                "label": label,
-                "name": _place_name(node),
-                "type": node.get("type"),
-                "lat": node["lat"],
-                "lng": node["lng"],
-                "reservation_time": node.get("reservation_time"),
-                "arrival_time": minutes_to_hhmm(arrival_times[pos]),
-            }
-        )
-
-        if pos == 0:
-            continue
-
-        prev_idx = order[pos - 1]
-        travel = travel_matrix[prev_idx][node_idx]
-        mode = choose_segment_mode(travel)
-        time_sec = int(travel["walk_time_sec"] if mode == "walk" else travel["car_time_sec"])
-        dist = travel.get("walk_distance_m") if mode == "walk" else travel.get("car_distance_m")
-
-        segments.append(
-            {
-                "from_id": nodes[prev_idx]["id"],
-                "to_id": node["id"],
-                "mode": mode,
-                "time_sec": time_sec,
-                "distance_m": dist or 0,
-            }
-        )
+    stops, segments, parkings = build_parking_aware_route(
+        order,
+        nodes,
+        travel_matrix,
+        start_idx,
+        end_idx,
+        travel_region,
+        trip_start_minutes,
+    )
 
     summary = build_route_summary(segments, len(parkings))
     route: dict[str, Any] = {
@@ -133,13 +85,13 @@ def optimize_route(
         "segments": segments,
         "parkings": [
             {
-                "label": f"P{i + 1}",
+                "label": p.get("label", f"P{i + 1}"),
                 "name": p["name"],
                 "address": p.get("address", ""),
                 "lat": p["lat"],
                 "lng": p["lng"],
-                "distance_m": p.get("distance_m"),
                 "place_ids": p.get("place_ids", []),
+                "base_fee": p.get("base_fee"),
             }
             for i, p in enumerate(parkings)
         ],

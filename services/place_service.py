@@ -99,6 +99,17 @@ def add_place() -> None:
     st.session_state[f"res_{place['id']}"] = ""
 
 
+def move_place(place_id: str, direction: int) -> None:
+    places = st.session_state.places
+    idx = next((i for i, p in enumerate(places) if p["id"] == place_id), None)
+    if idx is None:
+        return
+    new_idx = idx + direction
+    if new_idx < 0 or new_idx >= len(places):
+        return
+    places[idx], places[new_idx] = places[new_idx], places[idx]
+
+
 def delete_place(place_id: str) -> None:
     if len(st.session_state.places) <= 2:
         return

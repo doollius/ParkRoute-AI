@@ -24,6 +24,8 @@ def render() -> None:
     ]
     progress = st.progress(0, text="준비 중...")
 
+    st.session_state.pop("parking_candidates_cache", None)
+
     try:
         for i, step in enumerate(steps[:4]):
             progress.progress((i + 1) / len(steps), text=step)

@@ -50,10 +50,14 @@ def render() -> None:
             st.divider()
             st.subheader("추천 주차장")
             for p in route["parkings"]:
-                dist = f" · {p['distance_m']}m" if p.get("distance_m") else ""
-                st.write(f"**{p['label']}** {p['name']}{dist}")
+                fee = p.get("base_fee")
+                fee_text = f" · 기본요금 {fee}" if fee else ""
+                st.write(f"**{p['label']}** {p['name']}{fee_text}")
                 if p.get("address"):
                     st.caption(p["address"])
+            fees = [p.get("base_fee") for p in route["parkings"] if p.get("base_fee")]
+            if fees:
+                st.caption(f"주차장 {len(fees)}곳 — 요금은 현장·운영 정책에 따라 달라질 수 있습니다.")
 
         if route.get("explanation"):
             st.divider()
@@ -72,16 +76,20 @@ def render() -> None:
     with col2:
         if st.button("재계산"):
             st.session_state._route_computed = False
+            st.session_state.pop("parking_candidates_cache", None)
+            st.session_state.pop("tmap_route_cache", None)
             go_to("loading")
             st.rerun()
 
 
 def _render_route_map(route: dict) -> None:
     stops = route.get("stops", [])
+    segments = route.get("segments", [])
     if not stops:
         st.info("표시할 경로가 없습니다.")
         return
 
+    stop_by_id = {s["id"]: s for s in stops}
     center_lat = sum(s["lat"] for s in stops) / len(stops)
     center_lng = sum(s["lng"] for s in stops) / len(stops)
     m = folium.Map(location=[center_lat, center_lng], zoom_start=12)
@@ -89,33 +97,39 @@ def _render_route_map(route: dict) -> None:
     label_colors = {"S": "#16a34a", "E": "#dc2626"}
     for stop in stops:
         label = stop["label"]
-        color = label_colors.get(label, "#2563eb")
+        if stop.get("kind") == "parking" or str(label).startswith("P"):
+            color = "#9333ea"
+            shape = "border-radius:4px;padding:2px 6px;width:auto;height:auto;"
+        else:
+            color = label_colors.get(label, "#2563eb")
+            shape = "border-radius:50%;width:28px;height:28px;"
         folium.Marker(
             [stop["lat"], stop["lng"]],
             popup=stop.get("name"),
             icon=folium.DivIcon(
                 html=(
                     f'<div style="font-size:13px;font-weight:bold;color:white;'
-                    f"background:{color};border-radius:50%;width:28px;height:28px;"
+                    f"background:{color};{shape}"
                     f'display:flex;align-items:center;justify-content:center;">{label}</div>'
                 )
             ),
         ).add_to(m)
 
-    for p in route.get("parkings", []):
-        folium.Marker(
-            [p["lat"], p["lng"]],
-            popup=p.get("name"),
-            icon=folium.DivIcon(
-                html=(
-                    f'<div style="font-size:12px;font-weight:bold;color:white;'
-                    f'background:#9333ea;border-radius:4px;padding:2px 6px;">{p["label"]}</div>'
-                )
-            ),
+    for seg in segments:
+        from_stop = stop_by_id.get(seg.get("from_id"))
+        to_stop = stop_by_id.get(seg.get("to_id"))
+        if not from_stop or not to_stop:
+            continue
+        mode = seg.get("mode", "car")
+        color = "#2563eb" if mode == "car" else "#16a34a"
+        dash = "8, 8" if mode == "walk" else None
+        folium.PolyLine(
+            [[from_stop["lat"], from_stop["lng"]], [to_stop["lat"], to_stop["lng"]]],
+            color=color,
+            weight=4 if mode == "car" else 3,
+            opacity=0.85,
+            dash_array=dash,
         ).add_to(m)
 
-    path = [[s["lat"], s["lng"]] for s in stops]
-    if len(path) >= 2:
-        folium.PolyLine(path, color="#2563eb", weight=4, opacity=0.85).add_to(m)
-
+    st.caption("파란 실선: 차량 · 초록 점선: 도보")
     st_folium(m, width=None, height=450, returned_objects=[])
