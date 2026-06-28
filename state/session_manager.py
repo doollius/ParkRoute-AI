@@ -19,6 +19,8 @@ def init_session() -> None:
         "optimized": False,
         "logs": [],
         "run_api_check": False,
+        "api_check_results": [],
+        "api_check_all_passed": False,
         "_route_computed": False,
         "tmap_route_cache": {},
         "geocode_cache": {},
