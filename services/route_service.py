@@ -60,10 +60,72 @@ def _parking_warnings(
     return []
 
 
+def _solve_order_flexible(
+    cost_matrix: list[list[int]],
+    start_idx: int | None,
+    end_idx: int | None,
+    travel_matrix: list[list[dict[str, Any]]],
+    mapped_rules: list[dict[str, Any]],
+    reservation_by_index: dict[int, int] | None,
+    trip_start_minutes: int,
+) -> tuple[list[int] | None, int | None, int | None]:
+    n = len(cost_matrix)
+    if n <= 1:
+        return ([0] if n == 1 else None), start_idx, end_idx
+
+    def route_cost(order: list[int]) -> int:
+        return sum(int(cost_matrix[order[i]][order[i + 1]]) for i in range(len(order) - 1))
+
+    if start_idx is not None and end_idx is not None:
+        order = _solve_order(
+            cost_matrix,
+            start_idx,
+            end_idx,
+            travel_matrix,
+            mapped_rules,
+            reservation_by_index,
+            trip_start_minutes,
+        )
+        return order, start_idx, end_idx
+
+    candidates: list[tuple[int, int]] = []
+    if start_idx is not None and end_idx is None:
+        candidates = [(start_idx, e) for e in range(n) if n == 1 or e != start_idx]
+    elif start_idx is None and end_idx is not None:
+        candidates = [(s, end_idx) for s in range(n) if n == 1 or s != end_idx]
+    else:
+        candidates = [(s, e) for s in range(n) for e in range(n) if n == 1 or s != e]
+
+    best_order: list[int] | None = None
+    best_pair: tuple[int, int] | None = None
+    best_cost = float("inf")
+    for s, e in candidates:
+        order = _solve_order(
+            cost_matrix,
+            s,
+            e,
+            travel_matrix,
+            mapped_rules,
+            reservation_by_index,
+            trip_start_minutes,
+        )
+        if not order:
+            continue
+        cost = route_cost(order)
+        if cost < best_cost:
+            best_cost = cost
+            best_order = order
+            best_pair = (s, e)
+
+    if best_order and best_pair:
+        return best_order, best_pair[0], best_pair[1]
+    return None, start_idx, end_idx
+
+
 def optimize_route(
-    places: list[dict[str, Any]],
-    start_place_id: str,
-    end_place_id: str,
+    nodes: list[dict[str, Any]],
+    start_idx: int | None,
+    end_idx: int | None,
     travel_region: str,
     optimization_mode: str = "minimize_walk",
     visit_rules: list[dict[str, Any]] | None = None,
@@ -77,16 +139,17 @@ def optimize_route(
             on_progress(msg)
 
     warnings: list[str] = list(input_warnings or [])
-    nodes = [p for p in places if p.get("lat") is not None and p.get("lng") is not None]
     if len(nodes) > MAX_GRAPH_NODES:
         raise RouteOptimizationError(f"장소는 최대 {MAX_GRAPH_NODES}개까지 지원합니다.")
 
     id_to_index = {p["id"]: i for i, p in enumerate(nodes)}
-    if start_place_id not in id_to_index or end_place_id not in id_to_index:
-        raise RouteOptimizationError("출발지 또는 도착지 좌표가 없습니다.")
+    if start_idx is not None and (start_idx < 0 or start_idx >= len(nodes)):
+        raise RouteOptimizationError("출발지 좌표가 없습니다.")
+    if end_idx is not None and (end_idx < 0 or end_idx >= len(nodes)):
+        raise RouteOptimizationError("도착지 좌표가 없습니다.")
+    if start_idx is not None and end_idx is not None and start_idx == end_idx and len(nodes) > 1:
+        raise RouteOptimizationError("출발지와 도착지는 달라야 합니다.")
 
-    start_idx = id_to_index[start_place_id]
-    end_idx = id_to_index[end_place_id]
     minimize_walk = optimization_mode != "minimize_time"
 
     progress("이동시간 계산 중...")
@@ -120,7 +183,7 @@ def optimize_route(
     mapped_rules = map_rules_to_indices(visit_rules or [], id_to_index)
 
     progress("OR-Tools 실행 중...")
-    order = _solve_order(
+    order, resolved_start, resolved_end = _solve_order_flexible(
         cost_matrix,
         start_idx,
         end_idx,
@@ -129,6 +192,8 @@ def optimize_route(
         reservation_by_index or None,
         trip_start_minutes,
     )
+    start_idx = resolved_start if resolved_start is not None else start_idx
+    end_idx = resolved_end if resolved_end is not None else end_idx
 
     if not order:
         relaxed_matrix = apply_walk_limit(travel_matrix, WALK_TIME_FALLBACK_MINUTES)
@@ -136,7 +201,7 @@ def optimize_route(
         relaxed_cost = build_cluster_aware_cost_matrix(
             relaxed_matrix, relaxed_plan, nodes, minimize_walk
         )
-        order = _solve_order(
+        order, _, _ = _solve_order_flexible(
             relaxed_cost,
             start_idx,
             end_idx,
@@ -156,7 +221,7 @@ def optimize_route(
 
     if not order and len(mapped_rules) > len(_immediate_rules_only(mapped_rules)):
         immediate_only = _immediate_rules_only(mapped_rules)
-        order = _solve_order(
+        order, _, _ = _solve_order_flexible(
             cost_matrix,
             start_idx,
             end_idx,
@@ -172,8 +237,14 @@ def optimize_route(
             )
 
     if not order:
-        order = greedy_route_order(cost_matrix, start_idx, end_idx, mapped_rules)
+        n = len(cost_matrix)
+        g_start = start_idx if start_idx is not None else 0
+        g_end = end_idx if end_idx is not None else (n - 1 if n > 1 else 0)
+        if g_start == g_end and n > 1:
+            g_end = n - 1 if g_start != n - 1 else 0
+        order = greedy_route_order(cost_matrix, g_start, g_end, mapped_rules)
         if order:
+            start_idx, end_idx = g_start, g_end
             warnings.append(
                 "OR-Tools 최적화에 실패해 가까운 순서(휴리스틱) 경로를 사용했습니다. (ER-007)"
             )
@@ -187,6 +258,11 @@ def optimize_route(
     res_errors = check_reservation_feasible(order, nodes, travel_matrix, trip_start_minutes)
     if res_errors:
         raise RouteOptimizationError("\n".join(res_errors))
+
+    if start_idx is None and order:
+        start_idx = order[0]
+    if end_idx is None and order:
+        end_idx = order[-1]
 
     progress("경로 재구성 중...")
     stops, segments, parkings = build_parking_aware_route(

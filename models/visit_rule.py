@@ -5,6 +5,7 @@ from typing import Any
 
 RULE_IMMEDIATE = "immediate"  # 바로 다음: B = A + 1
 RULE_BEFORE = "before"  # 다음: A before B
+PICK_NONE = "__none__"
 
 
 def create_visit_rule(from_id: str, to_id: str, rule_type: str) -> dict[str, Any]:

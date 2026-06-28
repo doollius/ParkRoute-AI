@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from models.place import place_selection_label
 from models.visit_rule import rule_label
 from pages.input import render_places_map
 from services import place_service, visit_rule_service
@@ -12,24 +11,14 @@ from state.session_manager import go_to
 def render() -> None:
     st.title("입력 확인")
 
-    region = st.session_state.get("travel_region", "")
     mode = st.session_state.get("optimization_mode", "minimize_walk")
     mode_label = "도보 최소화" if mode == "minimize_walk" else "총 이동시간 최소화"
 
-    start = place_service.get_place_by_id(st.session_state.get("start_place_id"))
-    end = place_service.get_place_by_id(st.session_state.get("end_place_id"))
-
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown(f"**여행 지역:** {region}")
         st.markdown(f"**최적화 모드:** {mode_label}")
-        st.markdown(f"**출발 시각:** {st.session_state.get('trip_start_time', '09:00')}")
-        st.markdown(
-            f"**출발지:** {_place_summary(start)}"
-        )
-        st.markdown(
-            f"**도착지:** {_place_summary(end)}"
-        )
+        st.markdown(f"**출발지:** {place_service.get_route_endpoint_label('start')}")
+        st.markdown(f"**도착지:** {place_service.get_route_endpoint_label('end')}")
     with col2:
         summary = place_service.progress_summary()
         st.metric("좌표 변환 완료", f"{summary['geocoded_count']} / {summary['place_count']}")
@@ -56,6 +45,13 @@ def render() -> None:
             f"{len(geocoded)}곳으로 최적화합니다."
         )
 
+    if st.session_state.get("use_custom_start"):
+        node = st.session_state.get("custom_start_node") or {}
+        st.caption(f"별도 출발지: {node.get('normalized_address') or node.get('raw_input', '-')}")
+    if st.session_state.get("use_custom_end"):
+        node = st.session_state.get("custom_end_node") or {}
+        st.caption(f"별도 도착지: {node.get('normalized_address') or node.get('raw_input', '-')}")
+
     st.divider()
     rules = st.session_state.get("visit_rules", [])
     if rules:
@@ -66,11 +62,20 @@ def render() -> None:
 
     st.divider()
     st.subheader("입력 위치 미리보기")
-    render_places_map(
-        place_service.geocoded_places(),
-        st.session_state.get("start_place_id"),
-        st.session_state.get("end_place_id"),
-    )
+    map_places = list(place_service.geocoded_places())
+    if st.session_state.get("use_custom_start"):
+        node = st.session_state.get("custom_start_node")
+        if node and node.get("lat") is not None:
+            map_places.insert(0, node)
+    if st.session_state.get("use_custom_end"):
+        node = st.session_state.get("custom_end_node")
+        if node and node.get("lat") is not None:
+            map_places.append(node)
+    from services.place_service import CUSTOM_END_ID, CUSTOM_START_ID
+
+    start_map_id = CUSTOM_START_ID if st.session_state.get("use_custom_start") else st.session_state.get("start_place_id")
+    end_map_id = CUSTOM_END_ID if st.session_state.get("use_custom_end") else st.session_state.get("end_place_id")
+    render_places_map(map_places, start_map_id, end_map_id)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -86,11 +91,3 @@ def render() -> None:
             st.session_state.pop("tmap_route_cache", None)
             go_to("loading")
             st.rerun()
-
-
-def _place_summary(place: dict | None) -> str:
-    if not place:
-        return "(미선택)"
-    places = st.session_state.places
-    idx = next((i for i, p in enumerate(places) if p["id"] == place["id"]), 0)
-    return place_selection_label(place, idx, places)

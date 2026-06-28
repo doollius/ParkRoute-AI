@@ -7,11 +7,17 @@ import streamlit as st
 from api.geocode_api import resolve_address
 from api.tmap_api import TmapGeocodingError
 from models.place import create_place, place_selection_label
+from services import visit_rule_service
 from utils.address_validator import (
     validate_address,
     validate_place_name,
     validate_reservation_time,
 )
+
+from models.visit_rule import PICK_NONE
+
+CUSTOM_START_ID = "__custom_start__"
+CUSTOM_END_ID = "__custom_end__"
 
 
 def ensure_default_places() -> None:
@@ -175,19 +181,201 @@ def failed_geocode_places() -> list[dict[str, Any]]:
 
 def _base_validation_errors() -> list[str]:
     errors: list[str] = []
-    region = str(st.session_state.get("travel_region", "")).strip()
-    if not region:
-        errors.append("여행 지역을 입력하세요.")
-
-    from utils.time_utils import hhmm_to_minutes
-
-    trip_start = str(st.session_state.get("trip_start_time", "")).strip()
-    if not hhmm_to_minutes(trip_start):
-        errors.append("출발 시각은 HH:MM 형식이어야 합니다.")
-
     if len(st.session_state.places) < 2:
         errors.append("장소는 최소 2개 이상 필요합니다.")
     return errors
+
+
+def _endpoint_validation_errors() -> list[str]:
+    errors: list[str] = []
+    geocoded_ids = {p["id"] for p in geocoded_places()}
+
+    if st.session_state.get("use_custom_start"):
+        addr = str(st.session_state.get("custom_start_address", "")).strip()
+        if not addr:
+            errors.append("다른 출발지 주소를 입력하세요.")
+        else:
+            ok, msg = validate_address(addr)
+            if not ok:
+                errors.append(f"출발지 주소: {msg}")
+            elif not st.session_state.get("custom_start_node", {}).get("lat"):
+                err = st.session_state.get("custom_start_geocode_error") or "좌표 변환 중이거나 실패했습니다."
+                errors.append(f"출발지: {err}")
+    elif st.session_state.get("start_place_id") and st.session_state.start_place_id not in geocoded_ids:
+        errors.append("출발지 좌표가 없습니다. 좌표 변환을 완료하거나 다른 장소를 선택하세요.")
+
+    if st.session_state.get("use_custom_end"):
+        addr = str(st.session_state.get("custom_end_address", "")).strip()
+        if not addr:
+            errors.append("다른 도착지 주소를 입력하세요.")
+        else:
+            ok, msg = validate_address(addr)
+            if not ok:
+                errors.append(f"도착지 주소: {msg}")
+            elif not st.session_state.get("custom_end_node", {}).get("lat"):
+                err = st.session_state.get("custom_end_geocode_error") or "좌표 변환 중이거나 실패했습니다."
+                errors.append(f"도착지: {err}")
+    elif st.session_state.get("end_place_id") and st.session_state.end_place_id not in geocoded_ids:
+        errors.append("도착지 좌표가 없습니다. 좌표 변환을 완료하거나 다른 장소를 선택하세요.")
+
+    start_id = _resolved_start_place_id()
+    end_id = _resolved_end_place_id()
+    if start_id and end_id and start_id == end_id:
+        errors.append("출발지와 도착지는 달라야 합니다.")
+
+    return errors
+
+
+def _resolved_start_place_id() -> str | None:
+    if st.session_state.get("use_custom_start"):
+        return CUSTOM_START_ID
+    start_id = st.session_state.get("start_place_id")
+    return start_id if start_id and start_id != PICK_NONE else None
+
+
+def _resolved_end_place_id() -> str | None:
+    if st.session_state.get("use_custom_end"):
+        return CUSTOM_END_ID
+    end_id = st.session_state.get("end_place_id")
+    return end_id if end_id and end_id != PICK_NONE else None
+
+
+def infer_travel_region(places: list[dict[str, Any]] | None = None) -> str:
+    region = str(st.session_state.get("travel_region", "")).strip()
+    if region:
+        return region
+    from utils.address_validator import ADMIN_PATTERN
+
+    for place in places or geocoded_places():
+        addr = (place.get("normalized_address") or place.get("raw_input") or "").strip()
+        match = ADMIN_PATTERN.search(addr)
+        if match:
+            return match.group(0)
+    for key in ("custom_start_node", "custom_end_node"):
+        node = st.session_state.get(key) or {}
+        addr = (node.get("normalized_address") or node.get("raw_input") or "").strip()
+        match = ADMIN_PATTERN.search(addr)
+        if match:
+            return match.group(0)
+    return ""
+
+
+def geocode_custom_endpoints() -> None:
+    for kind, node_key, err_key, label in (
+        ("start", "custom_start_node", "custom_start_geocode_error", "출발지"),
+        ("end", "custom_end_node", "custom_end_geocode_error", "도착지"),
+    ):
+        use_key = f"use_custom_{kind}"
+        addr_key = f"custom_{kind}_address"
+        if not st.session_state.get(use_key):
+            st.session_state.pop(node_key, None)
+            st.session_state.pop(err_key, None)
+            continue
+
+        addr = str(st.session_state.get(addr_key, "")).strip()
+        if not addr:
+            st.session_state.pop(node_key, None)
+            st.session_state.pop(err_key, None)
+            continue
+
+        existing = st.session_state.get(node_key) or {}
+        if existing.get("raw_input") == addr and existing.get("lat") is not None:
+            continue
+
+        ok, msg = validate_address(addr)
+        if not ok:
+            st.session_state.pop(node_key, None)
+            st.session_state[err_key] = msg
+            continue
+
+        try:
+            result = resolve_address(addr)
+            st.session_state[node_key] = {
+                "id": CUSTOM_START_ID if kind == "start" else CUSTOM_END_ID,
+                "raw_input": addr,
+                "normalized_address": result["normalized_address"],
+                "lat": result["lat"],
+                "lng": result["lng"],
+                "type": label,
+                "reservation_time": None,
+                "is_custom_endpoint": True,
+            }
+            st.session_state.pop(err_key, None)
+        except TmapGeocodingError as exc:
+            st.session_state.pop(node_key, None)
+            st.session_state[err_key] = str(exc)
+
+
+def build_optimization_graph(
+    visit_places: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int | None, int | None]:
+    nodes = [dict(p) for p in visit_places]
+    start_idx: int | None = None
+    end_idx: int | None = None
+
+    if st.session_state.get("use_custom_start"):
+        custom = st.session_state.get("custom_start_node")
+        if custom and custom.get("lat") is not None:
+            nodes.insert(0, dict(custom))
+            start_idx = 0
+    else:
+        start_id = st.session_state.get("start_place_id")
+        if start_id and start_id != PICK_NONE:
+            start_idx = next((i for i, p in enumerate(nodes) if p["id"] == start_id), None)
+
+    if st.session_state.get("use_custom_end"):
+        custom = st.session_state.get("custom_end_node")
+        if custom and custom.get("lat") is not None:
+            nodes.append(dict(custom))
+            end_idx = len(nodes) - 1
+    else:
+        end_id = st.session_state.get("end_place_id")
+        if end_id and end_id != PICK_NONE:
+            end_idx = next((i for i, p in enumerate(nodes) if p["id"] == end_id), None)
+
+    return nodes, start_idx, end_idx
+
+
+def get_route_endpoint_label(kind: str) -> str:
+    if kind == "start":
+        if st.session_state.get("use_custom_start"):
+            node = st.session_state.get("custom_start_node") or {}
+            return node.get("type") or node.get("normalized_address") or node.get("raw_input") or "(미입력)"
+        place = get_place_by_id(st.session_state.get("start_place_id"))
+        if place:
+            places = st.session_state.places
+            idx = next((i for i, p in enumerate(places) if p["id"] == place["id"]), 0)
+            return place_selection_label(place, idx, places)
+        return "(미지정)"
+    if st.session_state.get("use_custom_end"):
+        node = st.session_state.get("custom_end_node") or {}
+        return node.get("type") or node.get("normalized_address") or node.get("raw_input") or "(미입력)"
+    place = get_place_by_id(st.session_state.get("end_place_id"))
+    if place:
+        places = st.session_state.places
+        idx = next((i for i, p in enumerate(places) if p["id"] == place["id"]), 0)
+        return place_selection_label(place, idx, places)
+    return "(미지정)"
+
+
+def route_endpoint_status() -> str:
+    has_start = bool(_resolved_start_place_id())
+    has_end = bool(_resolved_end_place_id())
+    if has_start and has_end:
+        return "출발·도착 설정됨"
+    if has_start:
+        return "출발만 설정"
+    if has_end:
+        return "도착만 설정"
+    return "미설정 (자동)"
+
+
+def resolved_start_place_id() -> str | None:
+    return _resolved_start_place_id()
+
+
+def resolved_end_place_id() -> str | None:
+    return _resolved_end_place_id()
 
 
 def _place_input_errors(strict_geocode: bool) -> list[str]:
@@ -214,27 +402,23 @@ def _place_input_errors(strict_geocode: bool) -> list[str]:
 
 
 def _route_point_errors(valid_ids: set[str]) -> list[str]:
-    errors: list[str] = []
-    start_id = st.session_state.get("start_place_id")
-    end_id = st.session_state.get("end_place_id")
-    if not start_id:
-        errors.append("출발지를 선택하세요.")
-    elif start_id not in valid_ids:
-        errors.append("출발지 좌표가 없습니다. 좌표 변환을 완료하거나 다른 장소를 선택하세요.")
-    if not end_id:
-        errors.append("도착지를 선택하세요.")
-    elif end_id not in valid_ids:
-        errors.append("도착지 좌표가 없습니다. 좌표 변환을 완료하거나 다른 장소를 선택하세요.")
-    if start_id and end_id and start_id == end_id:
-        errors.append("출발지와 도착지는 달라야 합니다.")
-    return errors
+    return _endpoint_validation_errors()
 
 
 def validation_errors() -> list[str]:
     errors = _base_validation_errors()
     errors.extend(_place_input_errors(strict_geocode=True))
-    valid_ids = {p["id"] for p in geocoded_places()}
-    errors.extend(_route_point_errors(valid_ids))
+    errors.extend(_endpoint_validation_errors())
+    place_ids = {p["id"] for p in st.session_state.places}
+    start_ref = _resolved_start_place_id()
+    end_ref = _resolved_end_place_id()
+    errors.extend(
+        visit_rule_service.validation_errors(
+            place_ids,
+            start_ref if start_ref in place_ids else None,
+            end_ref if end_ref in place_ids else None,
+        )
+    )
     return errors
 
 
@@ -244,8 +428,7 @@ def partial_validation_errors() -> list[str]:
     geocoded = geocoded_places()
     if len(geocoded) < 2:
         errors.append("좌표 변환이 완료된 장소가 2곳 이상 필요합니다.")
-    valid_ids = {p["id"] for p in geocoded}
-    errors.extend(_route_point_errors(valid_ids))
+    errors.extend(_endpoint_validation_errors())
     for i, place in enumerate(geocoded):
         type_ok, type_msg = validate_place_name(place.get("type"))
         if not type_ok:

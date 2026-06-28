@@ -24,10 +24,13 @@ def _split_order_into_legs(order: list[int], travel_matrix: list[list[dict[str, 
 
 
 def _node_stop(node: dict[str, Any], label: str, arrival_min: int | None = None) -> dict[str, Any]:
+    display_name = node.get("type") if node.get("is_custom_endpoint") else (
+        node.get("normalized_address") or node.get("raw_input") or "장소"
+    )
     stop = {
         "id": node["id"],
         "label": label,
-        "name": node.get("normalized_address") or node.get("raw_input") or "장소",
+        "name": display_name,
         "type": node.get("type"),
         "kind": "place",
         "lat": node["lat"],
