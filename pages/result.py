@@ -20,6 +20,13 @@ def render() -> None:
             st.rerun()
         return
 
+    if route.get("warnings"):
+        for warning in route["warnings"]:
+            st.warning(warning)
+
+    if route.get("message") and route["message"] != "최적 경로가 생성되었습니다.":
+        st.info(route["message"])
+
     summary = route.get("summary", {})
     col_left, col_right = st.columns([1, 2])
 
@@ -83,12 +90,17 @@ def render() -> None:
         st.subheader("경로 지도")
         _render_route_map(route)
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
+        if st.button("← 입력 수정"):
+            st.session_state._route_computed = False
+            go_to("input")
+            st.rerun()
+    with col2:
         if st.button("← 처음으로"):
             go_to("start")
             st.rerun()
-    with col2:
+    with col3:
         if st.button("재계산"):
             st.session_state._route_computed = False
             st.session_state.pop("parking_candidates_cache", None)

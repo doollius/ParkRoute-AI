@@ -28,6 +28,8 @@ def _generate_template(route: dict[str, Any]) -> str:
     parking_cost = summary.get("parking_cost_won")
     if parking_cost:
         lines.append(f"예상 주차비는 약 {parking_cost:,}원입니다.")
+    for warning in route.get("warnings") or []:
+        lines.append(warning)
     return " ".join(lines)
 
 

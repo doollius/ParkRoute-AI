@@ -47,6 +47,10 @@ def render() -> None:
         st.session_state.optimized = True
         st.session_state._route_computed = True
         progress.progress(1.0, text="완료!")
+        if route.get("warnings"):
+            st.session_state.route_warnings = route["warnings"]
+        else:
+            st.session_state.pop("route_warnings", None)
         go_to("result")
         st.rerun()
 

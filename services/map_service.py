@@ -52,6 +52,27 @@ def get_travel_times(
     return result
 
 
+def apply_walk_limit(
+    travel_matrix: list[list[dict[str, Any]]],
+    limit_minutes: int,
+) -> list[list[dict[str, Any]]]:
+    """Re-evaluate walk_allowed without extra API calls (ER-006 fallback)."""
+    limit_sec = limit_minutes * 60
+    updated: list[list[dict[str, Any]]] = []
+    for row in travel_matrix:
+        new_row: list[dict[str, Any]] = []
+        for leg in row:
+            walk_sec = leg.get("walk_time_sec")
+            new_row.append(
+                {
+                    **leg,
+                    "walk_allowed": walk_sec is not None and int(walk_sec) <= limit_sec,
+                }
+            )
+        updated.append(new_row)
+    return updated
+
+
 def build_travel_matrix(nodes: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     """Build NxN travel data matrix for nodes with lat/lng."""
     n = len(nodes)
