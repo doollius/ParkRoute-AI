@@ -24,6 +24,12 @@ def render() -> None:
         for warning in route["warnings"]:
             st.warning(warning)
 
+    excluded = route.get("excluded_places") or []
+    if excluded:
+        with st.expander(f"제외된 장소 ({len(excluded)}곳)", expanded=False):
+            for place in excluded:
+                st.write(f"· {place.get('raw_input', '-')} — {place.get('geocode_error') or '좌표 없음'}")
+
     if route.get("message") and route["message"] != "최적 경로가 생성되었습니다.":
         st.info(route["message"])
 

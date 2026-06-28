@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from constants.config import MAX_GRAPH_NODES, WALK_TIME_FALLBACK_MINUTES, WALK_TIME_LIMIT_MINUTES
 from models.visit_rule import RULE_IMMEDIATE
@@ -68,7 +68,15 @@ def optimize_route(
     optimization_mode: str = "minimize_walk",
     visit_rules: list[dict[str, Any]] | None = None,
     trip_start_time: str = "09:00",
+    on_progress: Callable[[str], None] | None = None,
+    input_warnings: list[str] | None = None,
+    excluded_places: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    def progress(msg: str) -> None:
+        if on_progress:
+            on_progress(msg)
+
+    warnings: list[str] = list(input_warnings or [])
     nodes = [p for p in places if p.get("lat") is not None and p.get("lng") is not None]
     if len(nodes) > MAX_GRAPH_NODES:
         raise RouteOptimizationError(f"장소는 최대 {MAX_GRAPH_NODES}개까지 지원합니다.")
@@ -81,7 +89,20 @@ def optimize_route(
     end_idx = id_to_index[end_place_id]
     minimize_walk = optimization_mode != "minimize_time"
 
-    travel_matrix = build_travel_matrix(nodes)
+    progress("이동시간 계산 중...")
+    travel_matrix = build_travel_matrix(nodes, on_progress=on_progress)
+    estimated_legs = sum(
+        1
+        for row in travel_matrix
+        for leg in row
+        if leg.get("estimated") and int(leg.get("car_time_sec") or 0) > 0
+    )
+    if estimated_legs:
+        warnings.append(
+            f"TMAP API 오류로 {estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다. (ER-009)"
+        )
+
+    progress("주차장 탐색 중...")
     cluster_plan = build_cluster_plan(nodes, travel_matrix, travel_region)
     cost_matrix = build_cluster_aware_cost_matrix(
         travel_matrix, cluster_plan, nodes, minimize_walk
@@ -97,8 +118,8 @@ def optimize_route(
                 reservation_by_index[i] = res_min
 
     mapped_rules = map_rules_to_indices(visit_rules or [], id_to_index)
-    warnings: list[str] = []
 
+    progress("OR-Tools 실행 중...")
     order = _solve_order(
         cost_matrix,
         start_idx,
@@ -167,6 +188,7 @@ def optimize_route(
     if res_errors:
         raise RouteOptimizationError("\n".join(res_errors))
 
+    progress("경로 재구성 중...")
     stops, segments, parkings = build_parking_aware_route(
         order,
         nodes,
@@ -203,6 +225,14 @@ def optimize_route(
         ],
         "summary": summary,
         "warnings": warnings,
+        "excluded_places": [
+            {
+                "id": p.get("id"),
+                "raw_input": p.get("raw_input"),
+                "geocode_error": p.get("geocode_error"),
+            }
+            for p in (excluded_places or [])
+        ],
         "message": "최적 경로가 생성되었습니다.",
         "trip_start_time": trip_start_time,
         "visit_rules_applied": len(mapped_rules),

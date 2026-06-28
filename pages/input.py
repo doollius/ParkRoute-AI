@@ -203,15 +203,25 @@ def _render_route_section() -> None:
 
 def _render_progress() -> None:
     summary = place_service.progress_summary()
+    failed_count = len(place_service.failed_geocode_places())
     region_ok = bool(str(st.session_state.get("travel_region", "")).strip())
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("여행 지역", "완료" if region_ok else "미입력")
-    c2.metric("장소", f"{summary['geocoded_count']}/{summary['place_count']} 좌표확인")
+    geocode_label = f"{summary['geocoded_count']}/{summary['place_count']}"
+    if failed_count:
+        geocode_label += f" ({failed_count} 제외)"
+    c2.metric("장소", geocode_label)
     c3.metric("예약", f"{summary['reservation_count']}건")
     c4.metric("방문 규칙", f"{len(st.session_state.get('visit_rules', []))}건")
     c5.metric("출발·도착", "설정됨" if st.session_state.get("start_place_id") and st.session_state.get("end_place_id") else "미설정")
 
     errors = place_service.validation_errors()
+    if place_service.uses_partial_geocoding() and not place_service.partial_validation_errors():
+        st.info(
+            f"좌표 변환 실패 {len(place_service.failed_geocode_places())}곳은 "
+            "제외하고 진행할 수 있습니다. (ER-005)"
+        )
+        errors = place_service.partial_validation_errors()
     place_ids = {p["id"] for p in st.session_state.places}
     errors.extend(
         visit_rule_service.validation_errors(
@@ -240,7 +250,9 @@ def _render_actions() -> None:
             reset_all()
             st.rerun()
     with col3:
-        complete = st.button("입력 완료 →", type="primary", disabled=not place_service.can_complete())
+        partial = place_service.uses_partial_geocoding() and place_service.can_complete()
+        label = "입력 완료 (일부 제외) →" if partial and place_service.validation_errors() else "입력 완료 →"
+        complete = st.button(label, type="primary", disabled=not place_service.can_complete())
         if complete:
             go_to("review")
             st.rerun()

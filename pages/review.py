@@ -42,8 +42,18 @@ def render() -> None:
             st.write(place.get("normalized_address") or place.get("raw_input"))
             if place.get("lat") is not None:
                 st.caption(f"좌표: {place['lat']:.5f}, {place['lng']:.5f}")
+            elif place.get("raw_input", "").strip():
+                st.error(place.get("geocode_error") or "좌표 변환 실패 — 최적화에서 제외")
             if place.get("reservation_time"):
                 st.caption(f"예약: {place['reservation_time']}")
+
+    excluded = place_service.failed_geocode_places()
+    geocoded = place_service.geocoded_places()
+    if excluded and geocoded:
+        st.warning(
+            f"좌표 변환 실패 {len(excluded)}곳은 제외하고 "
+            f"{len(geocoded)}곳으로 최적화합니다."
+        )
 
     st.divider()
     rules = st.session_state.get("visit_rules", [])
@@ -56,7 +66,7 @@ def render() -> None:
     st.divider()
     st.subheader("입력 위치 미리보기")
     render_places_map(
-        st.session_state.places,
+        place_service.geocoded_places(),
         st.session_state.get("start_place_id"),
         st.session_state.get("end_place_id"),
     )

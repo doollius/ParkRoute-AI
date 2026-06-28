@@ -122,7 +122,22 @@ def delete_place(place_id: str) -> None:
         st.session_state.end_place_id = None
 
 
-def validation_errors() -> list[str]:
+def geocoded_places() -> list[dict[str, Any]]:
+    return [p for p in st.session_state.places if p.get("lat") is not None and p.get("lng") is not None]
+
+
+def failed_geocode_places() -> list[dict[str, Any]]:
+    failed: list[dict[str, Any]] = []
+    for place in st.session_state.places:
+        raw = place.get("raw_input", "").strip()
+        if not raw:
+            continue
+        if place.get("lat") is None or place.get("lng") is None:
+            failed.append(place)
+    return failed
+
+
+def _base_validation_errors() -> list[str]:
     errors: list[str] = []
     region = str(st.session_state.get("travel_region", "")).strip()
     if not region:
@@ -136,7 +151,11 @@ def validation_errors() -> list[str]:
 
     if len(st.session_state.places) < 2:
         errors.append("장소는 최소 2개 이상 필요합니다.")
+    return errors
 
+
+def _place_input_errors(strict_geocode: bool) -> list[str]:
+    errors: list[str] = []
     for i, place in enumerate(st.session_state.places):
         raw = place.get("raw_input", "").strip()
         if len(raw) < 2:
@@ -146,27 +165,93 @@ def validation_errors() -> list[str]:
         if not ok:
             errors.append(f"장소 {i + 1}: {msg}")
             continue
-        if place.get("lat") is None or place.get("lng") is None:
+        if strict_geocode and (place.get("lat") is None or place.get("lng") is None):
             err = place.get("geocode_error") or "좌표 변환 중이거나 실패했습니다."
             errors.append(f"장소 {i + 1}: {err}")
         res_ok, res_msg = validate_reservation_time(place.get("reservation_time"))
         if not res_ok:
             errors.append(f"장소 {i + 1}: {res_msg}")
+    return errors
 
+
+def _route_point_errors(valid_ids: set[str]) -> list[str]:
+    errors: list[str] = []
     start_id = st.session_state.get("start_place_id")
     end_id = st.session_state.get("end_place_id")
     if not start_id:
         errors.append("출발지를 선택하세요.")
+    elif start_id not in valid_ids:
+        errors.append("출발지 좌표가 없습니다. 좌표 변환을 완료하거나 다른 장소를 선택하세요.")
     if not end_id:
         errors.append("도착지를 선택하세요.")
+    elif end_id not in valid_ids:
+        errors.append("도착지 좌표가 없습니다. 좌표 변환을 완료하거나 다른 장소를 선택하세요.")
     if start_id and end_id and start_id == end_id:
         errors.append("출발지와 도착지는 달라야 합니다.")
-
     return errors
 
 
+def validation_errors() -> list[str]:
+    errors = _base_validation_errors()
+    errors.extend(_place_input_errors(strict_geocode=True))
+    valid_ids = {p["id"] for p in geocoded_places()}
+    errors.extend(_route_point_errors(valid_ids))
+    return errors
+
+
+def partial_validation_errors() -> list[str]:
+    """ER-005 — validate geocoded subset only."""
+    errors = _base_validation_errors()
+    geocoded = geocoded_places()
+    if len(geocoded) < 2:
+        errors.append("좌표 변환이 완료된 장소가 2곳 이상 필요합니다.")
+    valid_ids = {p["id"] for p in geocoded}
+    errors.extend(_route_point_errors(valid_ids))
+    for i, place in enumerate(geocoded):
+        res_ok, res_msg = validate_reservation_time(place.get("reservation_time"))
+        if not res_ok:
+            errors.append(f"장소 {i + 1}: {res_msg}")
+    return errors
+
+
+def uses_partial_geocoding() -> bool:
+    return bool(failed_geocode_places()) and len(geocoded_places()) >= 2
+
+
 def can_complete() -> bool:
-    return len(validation_errors()) == 0
+    if not validation_errors():
+        return True
+    if uses_partial_geocoding() and not partial_validation_errors():
+        return True
+    return False
+
+
+def prepare_optimization_input() -> tuple[list[dict[str, Any]], list[str], list[dict[str, Any]]]:
+    """Return (places, warnings, excluded_places) for route optimization."""
+    geocoded = geocoded_places()
+    excluded = failed_geocode_places()
+    warnings: list[str] = []
+
+    if excluded:
+        warnings.append(
+            f"좌표 변환 실패 {len(excluded)}곳은 제외하고 최적화합니다. (ER-005)"
+        )
+        for place in excluded:
+            addr = place.get("raw_input", "")
+            reason = place.get("geocode_error") or "좌표 없음"
+            warnings.append(f"· 제외 — {addr}: {reason}")
+
+    valid_ids = {p["id"] for p in geocoded}
+    pruned_rules = [
+        r
+        for r in st.session_state.get("visit_rules", [])
+        if r.get("from_id") in valid_ids and r.get("to_id") in valid_ids
+    ]
+    dropped = len(st.session_state.get("visit_rules", [])) - len(pruned_rules)
+    if dropped:
+        warnings.append(f"제외된 장소와 연결된 방문 규칙 {dropped}건을 무시합니다.")
+
+    return geocoded, warnings, excluded, pruned_rules
 
 
 def get_place_by_id(place_id: str | None) -> dict[str, Any] | None:
