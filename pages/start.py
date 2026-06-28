@@ -45,9 +45,7 @@ def render() -> None:
 
     col1, col2, _ = st.columns([1, 1, 2])
     with col1:
-        if st.button("API 연결 확인", use_container_width=True):
-            _run_live_api_check()
-            st.rerun()
+        api_check_clicked = st.button("API 연결 확인", use_container_width=True)
     with col2:
         if st.button(
             "시작하기",
@@ -59,15 +57,35 @@ def render() -> None:
             go_to("input")
             st.rerun()
 
+    check_progress = st.empty()
+    if api_check_clicked:
+        _run_live_api_check(check_progress)
+        st.rerun()
+
     _render_live_test_results()
 
 
-def _run_live_api_check() -> None:
+def _run_live_api_check(progress_slot) -> None:
     st.session_state.run_api_check = True
     results: list[tuple[str, bool, str]] = []
-    for label, test_fn in _LIVE_TESTS:
-        ok, detail = test_fn()
-        results.append((label, ok, detail))
+    total = len(_LIVE_TESTS)
+
+    with progress_slot.status("⏳ 확인 중…", expanded=True) as status:
+        st.caption("TMAP · 공공데이터 · OpenAI 순서로 연결을 확인합니다.")
+        progress_bar = st.progress(0.0, text="API 연결 확인 준비 중…")
+        for i, (label, test_fn) in enumerate(_LIVE_TESTS):
+            progress_bar.progress(
+                i / total,
+                text=f"확인 중… ({i + 1}/{total}) · {label}",
+            )
+            st.markdown(f"**{label}** 연결 확인 중…")
+            ok, detail = test_fn()
+            results.append((label, ok, detail))
+            icon = "✅" if ok else "❌"
+            st.markdown(f"{icon} {label}: {detail}")
+        progress_bar.progress(1.0, text="확인 완료")
+        status.update(label="API 연결 확인 완료", state="complete", expanded=False)
+
     st.session_state.api_check_results = results
     st.session_state.api_check_all_passed = all(ok for _, ok, _ in results)
 
