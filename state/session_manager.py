@@ -8,6 +8,7 @@ from models.place import create_place
 def init_session() -> None:
     defaults = {
         "page": "start",
+        "input_step": "places",
         "travel_region": "",
         "start_place_id": None,
         "end_place_id": None,

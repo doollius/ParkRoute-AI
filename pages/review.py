@@ -74,6 +74,7 @@ def render() -> None:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("← 수정하기"):
+            st.session_state.input_step = "trip"
             go_to("input")
             st.rerun()
     with col2:

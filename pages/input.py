@@ -18,19 +18,35 @@ def render() -> None:
     place_service.sync_places_from_widgets()
     place_service.geocode_pending_places()
 
+    step = st.session_state.get("input_step", "places")
+    if step == "trip":
+        _render_trip_step()
+    else:
+        _render_places_step()
+
+
+def _render_places_step() -> None:
+    st.title("방문 장소")
+    st.caption("1/2 · 도로명주소 또는 지번주소만 입력합니다. (네이버 공유 URL 미지원)")
+
+    _render_places_section()
+    st.divider()
+    _render_places_progress()
+    _render_places_actions()
+
+
+def _render_trip_step() -> None:
     st.title("여행 정보 입력")
-    st.caption("도로명주소 또는 지번주소만 입력합니다. (네이버 공유 URL 미지원)")
+    st.caption("2/2 · 여행 정보와 출발·도착을 설정하세요.")
 
     _render_travel_section()
-    st.divider()
-    _render_places_section()
     st.divider()
     _render_visit_rules_section()
     st.divider()
     _render_route_section()
     st.divider()
-    _render_progress()
-    _render_actions()
+    _render_trip_progress()
+    _render_trip_actions()
 
 
 def _render_travel_section() -> None:
@@ -244,7 +260,29 @@ def _render_route_section() -> None:
         )
 
 
-def _render_progress() -> None:
+def _render_places_progress() -> None:
+    summary = place_service.progress_summary()
+    failed_count = len(place_service.failed_geocode_places())
+    c1, c2 = st.columns(2)
+    geocode_label = f"{summary['geocoded_count']}/{summary['place_count']}"
+    if failed_count:
+        geocode_label += f" ({failed_count} 실패)"
+    c1.metric("장소", geocode_label)
+    c2.metric("예약", f"{summary['reservation_count']}건")
+
+    errors = place_service.places_step_errors()
+    if place_service.uses_partial_geocoding() and place_service.can_proceed_to_trip_step():
+        st.info(
+            f"좌표 변환 실패 {len(place_service.failed_geocode_places())}곳은 "
+            "다음 단계에서 제외하고 진행할 수 있습니다. (ER-005)"
+        )
+    if errors:
+        with st.expander("입력 확인 필요", expanded=True):
+            for err in errors:
+                st.warning(err)
+
+
+def _render_trip_progress() -> None:
     summary = place_service.progress_summary()
     failed_count = len(place_service.failed_geocode_places())
     region_ok = bool(str(st.session_state.get("travel_region", "")).strip())
@@ -282,7 +320,7 @@ def _render_progress() -> None:
                 st.warning(err)
 
 
-def _render_actions() -> None:
+def _render_places_actions() -> None:
     if is_confirm_pending("confirm_reset"):
         action = render_confirm_box(
             "confirm_reset",
@@ -306,12 +344,50 @@ def _render_actions() -> None:
             request_confirm("confirm_reset")
             st.rerun()
     with col3:
-        partial = place_service.uses_partial_geocoding() and place_service.can_complete()
-        label = "입력 완료 (일부 제외) →" if partial and place_service.validation_errors() else "입력 완료 →"
-        complete = st.button(label, type="primary", disabled=not place_service.can_complete())
-        if complete:
+        if st.button(
+            "다음 →",
+            type="primary",
+            disabled=not place_service.can_proceed_to_trip_step(),
+        ):
+            st.session_state.input_step = "trip"
+            st.rerun()
+
+
+def _render_trip_actions() -> None:
+    if is_confirm_pending("confirm_reset"):
+        action = render_confirm_box(
+            "confirm_reset",
+            "모든 입력을 삭제합니다. 계속하시겠습니까?",
+            confirm_label="삭제",
+            cancel_label="취소",
+        )
+        if action == "confirm":
+            reset_all()
+            st.rerun()
+        if action == "pending":
+            return
+
+    partial = place_service.uses_partial_geocoding() and place_service.can_complete()
+    complete_label = "입력 완료 (일부 제외) →" if partial and place_service.validation_errors() else "입력 완료 →"
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("← 시작 화면"):
+            go_to("start")
+            st.rerun()
+    with col2:
+        if st.button("초기화"):
+            request_confirm("confirm_reset")
+            st.rerun()
+    with col3:
+        if st.button(complete_label, type="primary", disabled=not place_service.can_complete()):
             go_to("review")
             st.rerun()
+
+    st.divider()
+    if st.button("← 이전", use_container_width=True):
+        st.session_state.input_step = "places"
+        st.rerun()
 
 
 def render_places_map(places: list, start_id: str | None, end_id: str | None) -> None:

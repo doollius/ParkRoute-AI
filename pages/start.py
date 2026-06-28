@@ -43,6 +43,7 @@ def render() -> None:
             use_container_width=True,
             disabled=not can_start,
         ):
+            st.session_state.input_step = "places"
             go_to("input")
             st.rerun()
 

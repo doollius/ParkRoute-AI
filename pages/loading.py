@@ -65,6 +65,7 @@ def render() -> None:
         status.empty()
         st.error(str(exc))
         if st.button("← 입력 수정"):
+            st.session_state.input_step = "trip"
             go_to("input")
             st.rerun()
     except Exception as exc:
@@ -72,5 +73,6 @@ def render() -> None:
         status.empty()
         st.error(f"최적화 중 오류가 발생했습니다: {exc}")
         if st.button("← 입력 수정"):
+            st.session_state.input_step = "trip"
             go_to("input")
             st.rerun()

@@ -18,6 +18,7 @@ def render() -> None:
     if not route.get("stops"):
         st.warning("경로 데이터가 없습니다. 입력부터 다시 진행해 주세요.")
         if st.button("← 입력 화면"):
+            st.session_state.input_step = "places"
             go_to("input")
             st.rerun()
         return
@@ -117,6 +118,7 @@ def render() -> None:
         )
         if action == "confirm":
             st.session_state._route_computed = False
+            st.session_state.input_step = "trip"
             go_to("input")
             st.rerun()
 
@@ -124,6 +126,7 @@ def render() -> None:
     with col1:
         if st.button("← 입력 수정"):
             st.session_state._route_computed = False
+            st.session_state.input_step = "trip"
             go_to("input")
             st.rerun()
     with col2:

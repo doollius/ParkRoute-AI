@@ -250,6 +250,41 @@ def uses_partial_geocoding() -> bool:
     return bool(failed_geocode_places()) and len(geocoded_places()) >= 2
 
 
+def places_step_errors() -> list[str]:
+    """Step 1 (방문 장소) — address + geocoding only."""
+    errors: list[str] = []
+    if len(st.session_state.places) < 2:
+        errors.append("장소는 최소 2개 이상 필요합니다.")
+
+    for i, place in enumerate(st.session_state.places):
+        raw = place.get("raw_input", "").strip()
+        if len(raw) < 2:
+            errors.append(f"장소 {i + 1}: 주소를 입력하세요.")
+            continue
+        ok, msg = validate_address(raw)
+        if not ok:
+            errors.append(f"장소 {i + 1}: {msg}")
+            continue
+        res_ok, res_msg = validate_reservation_time(place.get("reservation_time"))
+        if not res_ok:
+            errors.append(f"장소 {i + 1}: {res_msg}")
+
+    geocoded = geocoded_places()
+    if len(geocoded) < 2:
+        errors.append("좌표 변환이 완료된 장소가 2곳 이상 필요합니다.")
+        for i, place in enumerate(st.session_state.places):
+            raw = place.get("raw_input", "").strip()
+            if raw and (place.get("lat") is None or place.get("lng") is None):
+                err = place.get("geocode_error") or "좌표 변환 중이거나 실패했습니다."
+                errors.append(f"장소 {i + 1}: {err}")
+
+    return errors
+
+
+def can_proceed_to_trip_step() -> bool:
+    return not places_step_errors()
+
+
 def can_complete() -> bool:
     if not validation_errors():
         return True
