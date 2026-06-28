@@ -6,7 +6,7 @@ from streamlit_folium import st_folium
 
 from models.visit_rule import PICK_NONE, RULE_BEFORE, RULE_IMMEDIATE, rule_label
 from services import place_service, visit_rule_service
-from state.session_manager import go_to, reset_all
+from state.session_manager import go_to, reset_places_step, reset_trip_step
 from utils.ui_helpers import bottom_action_row, bottom_button, is_confirm_pending, render_confirm_box, request_confirm
 
 
@@ -391,15 +391,15 @@ def _render_trip_progress() -> None:
 
 
 def _render_places_actions() -> None:
-    if is_confirm_pending("confirm_reset"):
+    if is_confirm_pending("confirm_reset_places"):
         action = render_confirm_box(
-            "confirm_reset",
-            "모든 입력을 삭제합니다. 계속하시겠습니까?",
-            confirm_label="삭제",
+            "confirm_reset_places",
+            "이 페이지에서 입력한 **방문 장소**를 모두 지웁니다. 계속하시겠습니까?",
+            confirm_label="초기화",
             cancel_label="취소",
         )
         if action == "confirm":
-            reset_all()
+            reset_places_step()
             st.rerun()
         if action == "pending":
             return
@@ -420,20 +420,20 @@ def _render_places_actions() -> None:
     st.divider()
     with bottom_action_row(2) as (left, _):
         if bottom_button(left, "초기화"):
-            request_confirm("confirm_reset")
+            request_confirm("confirm_reset_places")
             st.rerun()
 
 
 def _render_trip_actions() -> None:
-    if is_confirm_pending("confirm_reset"):
+    if is_confirm_pending("confirm_reset_trip"):
         action = render_confirm_box(
-            "confirm_reset",
-            "모든 입력을 삭제합니다. 계속하시겠습니까?",
-            confirm_label="삭제",
+            "confirm_reset_trip",
+            "이 페이지에서 입력한 **추가 정보**(최적화·방문 규칙·출발·도착)를 초기화합니다. 계속하시겠습니까?",
+            confirm_label="초기화",
             cancel_label="취소",
         )
         if action == "confirm":
-            reset_all()
+            reset_trip_step()
             st.rerun()
         if action == "pending":
             return
@@ -452,7 +452,7 @@ def _render_trip_actions() -> None:
     st.divider()
     with bottom_action_row(2) as (left, _):
         if bottom_button(left, "초기화"):
-            request_confirm("confirm_reset")
+            request_confirm("confirm_reset_trip")
             st.rerun()
 
 
