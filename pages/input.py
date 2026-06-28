@@ -262,6 +262,10 @@ def _show_custom_geocode_status(kind: str) -> None:
 
 def _render_route_section() -> None:
     st.subheader("출발 · 도착")
+    st.caption(
+        "출발지·도착지 **중 하나만** 지정해도 됩니다. "
+        "(없음)이면 해당 방향은 자동으로 최적 선택됩니다."
+    )
     all_ids, labels = _route_option_ids()
     if len(all_ids) <= 1:
         st.warning("장소를 먼저 입력하세요.")

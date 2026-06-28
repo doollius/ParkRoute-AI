@@ -71,7 +71,8 @@ def _solve_order_flexible(
 ) -> tuple[list[int] | None, int | None, int | None]:
     n = len(cost_matrix)
     if n <= 1:
-        return ([0] if n == 1 else None), start_idx, end_idx
+        idx = 0
+        return [idx], start_idx if start_idx is not None else idx, end_idx if end_idx is not None else idx
 
     def route_cost(order: list[int]) -> int:
         return sum(int(cost_matrix[order[i]][order[i + 1]]) for i in range(len(order) - 1))
@@ -90,11 +91,11 @@ def _solve_order_flexible(
 
     candidates: list[tuple[int, int]] = []
     if start_idx is not None and end_idx is None:
-        candidates = [(start_idx, e) for e in range(n) if n == 1 or e != start_idx]
+        candidates = [(start_idx, e) for e in range(n) if e != start_idx]
     elif start_idx is None and end_idx is not None:
-        candidates = [(s, end_idx) for s in range(n) if n == 1 or s != end_idx]
+        candidates = [(s, end_idx) for s in range(n) if s != end_idx]
     else:
-        candidates = [(s, e) for s in range(n) for e in range(n) if n == 1 or s != e]
+        candidates = [(s, e) for s in range(n) for e in range(n) if s != e]
 
     best_order: list[int] | None = None
     best_pair: tuple[int, int] | None = None
@@ -118,7 +119,55 @@ def _solve_order_flexible(
             best_pair = (s, e)
 
     if best_order and best_pair:
-        return best_order, best_pair[0], best_pair[1]
+        resolved_start = start_idx if start_idx is not None else best_pair[0]
+        resolved_end = end_idx if end_idx is not None else best_pair[1]
+        return best_order, resolved_start, resolved_end
+    return None, start_idx, end_idx
+
+
+def _greedy_order_flexible(
+    cost_matrix: list[list[int]],
+    start_idx: int | None,
+    end_idx: int | None,
+    mapped_rules: list[dict[str, Any]] | None,
+) -> tuple[list[int] | None, int | None, int | None]:
+    n = len(cost_matrix)
+    if n <= 1:
+        idx = 0
+        return [idx], start_idx if start_idx is not None else idx, end_idx if end_idx is not None else idx
+
+    def route_cost(order: list[int]) -> int:
+        return sum(int(cost_matrix[order[i]][order[i + 1]]) for i in range(len(order) - 1))
+
+    if start_idx is not None and end_idx is not None:
+        order = greedy_route_order(cost_matrix, start_idx, end_idx, mapped_rules)
+        return order, start_idx, end_idx
+
+    candidates: list[tuple[int, int]] = []
+    if start_idx is not None and end_idx is None:
+        candidates = [(start_idx, e) for e in range(n) if e != start_idx]
+    elif start_idx is None and end_idx is not None:
+        candidates = [(s, end_idx) for s in range(n) if s != end_idx]
+    else:
+        candidates = [(s, e) for s in range(n) for e in range(n) if s != e]
+
+    best_order: list[int] | None = None
+    best_pair: tuple[int, int] | None = None
+    best_cost = float("inf")
+    for s, e in candidates:
+        order = greedy_route_order(cost_matrix, s, e, mapped_rules)
+        if not order:
+            continue
+        cost = route_cost(order)
+        if cost < best_cost:
+            best_cost = cost
+            best_order = order
+            best_pair = (s, e)
+
+    if best_order and best_pair:
+        resolved_start = start_idx if start_idx is not None else best_pair[0]
+        resolved_end = end_idx if end_idx is not None else best_pair[1]
+        return best_order, resolved_start, resolved_end
     return None, start_idx, end_idx
 
 
@@ -151,6 +200,8 @@ def optimize_route(
         raise RouteOptimizationError("출발지와 도착지는 달라야 합니다.")
 
     minimize_walk = optimization_mode != "minimize_time"
+    user_start_fixed = start_idx is not None
+    user_end_fixed = end_idx is not None
 
     progress("이동시간 계산 중...")
     travel_matrix = build_travel_matrix(nodes, on_progress=on_progress)
@@ -237,14 +288,12 @@ def optimize_route(
             )
 
     if not order:
-        n = len(cost_matrix)
-        g_start = start_idx if start_idx is not None else 0
-        g_end = end_idx if end_idx is not None else (n - 1 if n > 1 else 0)
-        if g_start == g_end and n > 1:
-            g_end = n - 1 if g_start != n - 1 else 0
-        order = greedy_route_order(cost_matrix, g_start, g_end, mapped_rules)
+        order, g_start, g_end = _greedy_order_flexible(
+            cost_matrix, start_idx, end_idx, mapped_rules
+        )
         if order:
-            start_idx, end_idx = g_start, g_end
+            start_idx = g_start if g_start is not None else start_idx
+            end_idx = g_end if g_end is not None else end_idx
             warnings.append(
                 "OR-Tools 최적화에 실패해 가까운 순서(휴리스틱) 경로를 사용했습니다. (ER-007)"
             )
@@ -264,6 +313,13 @@ def optimize_route(
     if end_idx is None and order:
         end_idx = order[-1]
 
+    if user_start_fixed and not user_end_fixed:
+        end_name = nodes[end_idx].get("type") or nodes[end_idx].get("normalized_address") or "종료 지점"
+        warnings.append(f"도착지를 지정하지 않아 **{end_name}** 에서 종료하는 경로를 선택했습니다.")
+    elif user_end_fixed and not user_start_fixed:
+        start_name = nodes[start_idx].get("type") or nodes[start_idx].get("normalized_address") or "출발 지점"
+        warnings.append(f"출발지를 지정하지 않아 **{start_name}** 에서 시작하는 경로를 선택했습니다.")
+
     progress("경로 재구성 중...")
     stops, segments, parkings = build_parking_aware_route(
         order,
@@ -274,6 +330,8 @@ def optimize_route(
         travel_region,
         trip_start_minutes,
         cluster_plan=cluster_plan,
+        mark_start=user_start_fixed,
+        mark_end=user_end_fixed,
     )
 
     warnings.extend(_parking_warnings(order, travel_matrix, parkings))
@@ -312,6 +370,8 @@ def optimize_route(
         "message": "최적 경로가 생성되었습니다.",
         "trip_start_time": trip_start_time,
         "visit_rules_applied": len(mapped_rules),
+        "start_fixed": user_start_fixed,
+        "end_fixed": user_end_fixed,
     }
     if warnings:
         route["message"] = "조건을 일부 완화하여 경로를 생성했습니다."

@@ -81,6 +81,24 @@ def _append_segment(
     )
 
 
+def _place_stop_label(
+    node_idx: int,
+    *,
+    start_idx: int,
+    end_idx: int,
+    mark_start: bool,
+    mark_end: bool,
+    visit_num: int,
+    at_route_start: bool = False,
+) -> tuple[str, int]:
+    if at_route_start and mark_start and node_idx == start_idx:
+        return "S", visit_num
+    if mark_end and node_idx == end_idx:
+        return "E", visit_num
+    visit_num += 1
+    return str(visit_num), visit_num
+
+
 def build_parking_aware_route(
     order: list[int],
     nodes: list[dict[str, Any]],
@@ -90,6 +108,8 @@ def build_parking_aware_route(
     travel_region: str,
     trip_start_minutes: int,
     cluster_plan: ClusterPlan | None = None,
+    mark_start: bool = True,
+    mark_end: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     legs = _split_order_into_legs(order, travel_matrix)
     candidates = get_parking_candidates(nodes, travel_region)
@@ -136,16 +156,28 @@ def build_parking_aware_route(
             idx = leg[0]
             node = nodes[idx]
             if idx == start_idx and not stops:
-                stops.append(_node_stop(node, "S", current_minutes))
+                label, visit_num = _place_stop_label(
+                    idx,
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    mark_start=mark_start,
+                    mark_end=mark_end,
+                    visit_num=visit_num,
+                    at_route_start=True,
+                )
+                stops.append(_node_stop(node, label, current_minutes))
                 prev_stop = stops[-1]
                 continue
             if prev_stop is None:
                 continue
-            if idx == end_idx:
-                label = "E"
-            else:
-                visit_num += 1
-                label = str(visit_num)
+            label, visit_num = _place_stop_label(
+                idx,
+                start_idx=start_idx,
+                end_idx=end_idx,
+                mark_start=mark_start,
+                mark_end=mark_end,
+                visit_num=visit_num,
+            )
             add_travel(prev_stop, _node_stop(node, label))
             continue
 
@@ -165,7 +197,16 @@ def build_parking_aware_route(
             if prev_stop is None:
                 first = nodes[leg[0]]
                 if leg[0] == start_idx:
-                    stops.append(_node_stop(first, "S", current_minutes))
+                    label, visit_num = _place_stop_label(
+                        leg[0],
+                        start_idx=start_idx,
+                        end_idx=end_idx,
+                        mark_start=mark_start,
+                        mark_end=mark_end,
+                        visit_num=visit_num,
+                        at_route_start=True,
+                    )
+                    stops.append(_node_stop(first, label, current_minutes))
                     prev_stop = stops[-1]
                     leg = leg[1:]
                     if not leg:
@@ -180,10 +221,14 @@ def build_parking_aware_route(
 
             for idx in leg:
                 node = nodes[idx]
-                label = "E" if idx == end_idx else str(visit_num + 1)
-                if label != "E":
-                    visit_num += 1
-                    label = str(visit_num)
+                label, visit_num = _place_stop_label(
+                    idx,
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    mark_start=mark_start,
+                    mark_end=mark_end,
+                    visit_num=visit_num,
+                )
                 add_travel(prev_stop, _node_stop(node, label), prefer_walk=True)
 
             finalize_parking_stay(parking["id"], current_minutes)
@@ -191,16 +236,26 @@ def build_parking_aware_route(
             for idx in leg:
                 node = nodes[idx]
                 if prev_stop is None:
-                    label = "S" if idx == start_idx else "1"
-                    if label == "1":
-                        visit_num = max(visit_num, 1)
+                    label, visit_num = _place_stop_label(
+                        idx,
+                        start_idx=start_idx,
+                        end_idx=end_idx,
+                        mark_start=mark_start,
+                        mark_end=mark_end,
+                        visit_num=visit_num,
+                        at_route_start=(idx == start_idx),
+                    )
                     stops.append(_node_stop(node, label, current_minutes))
                     prev_stop = stops[-1]
                     continue
-                label = "E" if idx == end_idx else str(visit_num + 1)
-                if label != "E":
-                    visit_num += 1
-                    label = str(visit_num)
+                label, visit_num = _place_stop_label(
+                    idx,
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    mark_start=mark_start,
+                    mark_end=mark_end,
+                    visit_num=visit_num,
+                )
                 add_travel(prev_stop, _node_stop(node, label))
 
     return stops, segments, parkings_meta
