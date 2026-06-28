@@ -1,0 +1,8 @@
+WALK_TIME_LIMIT_MINUTES = 9
+MAX_GRAPH_NODES = 30
+OPTIMIZATION_TIMEOUT_SEC = 10
+
+OPENAI_MODEL_DEFAULT = "gpt-4o-mini"
+
+APP_TITLE = "ParkRoute AI"
+APP_TAGLINE = "주차 · 도보 · 차량을 고려한 여행 동선 최적화"
