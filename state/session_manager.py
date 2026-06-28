@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from models.place import create_place
+
 
 def init_session() -> None:
     defaults = {
@@ -15,6 +17,9 @@ def init_session() -> None:
         "route": None,
         "optimized": False,
         "logs": [],
+        "run_api_check": False,
+        "_route_computed": False,
+        "tmap_route_cache": {},
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -30,3 +35,4 @@ def reset_all() -> None:
     for key in keys:
         del st.session_state[key]
     init_session()
+    st.session_state.places = [create_place(), create_place()]

@@ -4,49 +4,59 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
+from optimizer.scoring import format_duration
 from state.session_manager import go_to
-
-# Demo coordinates (Busan area) for map skeleton
-DEMO_POINTS = [
-    ("S", "출발", 35.1596, 129.0602),
-    ("1", "장소 1", 35.1588, 129.0620),
-    ("2", "장소 2", 35.1575, 129.0645),
-    ("E", "도착", 35.1560, 129.0670),
-]
 
 
 def render() -> None:
     st.title("최적 경로 결과")
 
     route = st.session_state.get("route") or {}
-    st.write(route.get("message", ""))
+    if not route.get("stops"):
+        st.warning("경로 데이터가 없습니다. 입력부터 다시 진행해 주세요.")
+        if st.button("← 입력 화면"):
+            go_to("input")
+            st.rerun()
+        return
 
+    summary = route.get("summary", {})
     col_left, col_right = st.columns([1, 2])
+
     with col_left:
         st.subheader("방문 순서")
-        for label, name, _, _ in DEMO_POINTS:
-            st.write(f"**{label}** — {name}")
-        st.caption("AI 설명 · 주차 정보는 Optimizer 연결 후 표시됩니다.")
+        for stop in route.get("stops", []):
+            extra = ""
+            if stop.get("reservation_time"):
+                extra = f" · 예약 {stop['reservation_time']}"
+            st.write(f"**{stop['label']}** — [{stop.get('type', '-')}] {stop.get('name', '')}{extra}")
+
+        st.divider()
+        st.subheader("이동 요약")
+        st.metric("총 이동", format_duration(summary.get("total_time_sec", 0)))
+        c1, c2 = st.columns(2)
+        c1.metric("차량", format_duration(summary.get("car_time_sec", 0)))
+        c2.metric("도보", format_duration(summary.get("walk_time_sec", 0)))
+        st.metric("주차장", f"{summary.get('parking_count', 0)}곳")
+        if summary.get("total_distance_m"):
+            st.caption(f"총 거리 약 {summary['total_distance_m'] // 1000}km")
+
+        if route.get("parkings"):
+            st.divider()
+            st.subheader("추천 주차장")
+            for p in route["parkings"]:
+                dist = f" · {p['distance_m']}m" if p.get("distance_m") else ""
+                st.write(f"**{p['label']}** {p['name']}{dist}")
+                if p.get("address"):
+                    st.caption(p["address"])
+
+        if route.get("explanation"):
+            st.divider()
+            st.subheader("AI 추천 이유")
+            st.info(route["explanation"])
 
     with col_right:
-        st.subheader("지도 (데모)")
-        m = folium.Map(location=[35.158, 129.062], zoom_start=15)
-        for label, name, lat, lng in DEMO_POINTS:
-            folium.Marker(
-                [lat, lng],
-                popup=name,
-                icon=folium.DivIcon(
-                    html=f'<div style="font-size:14px;font-weight:bold;color:white;'
-                    f'background:#2563eb;border-radius:50%;width:28px;height:28px;'
-                    f'display:flex;align-items:center;justify-content:center;">{label}</div>'
-                ),
-            ).add_to(m)
-        folium.PolyLine(
-            [[lat, lng] for _, _, lat, lng in DEMO_POINTS],
-            color="#2563eb",
-            weight=4,
-        ).add_to(m)
-        st_folium(m, width=None, height=400, returned_objects=[])
+        st.subheader("경로 지도")
+        _render_route_map(route)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -55,5 +65,51 @@ def render() -> None:
             st.rerun()
     with col2:
         if st.button("재계산"):
+            st.session_state._route_computed = False
             go_to("loading")
             st.rerun()
+
+
+def _render_route_map(route: dict) -> None:
+    stops = route.get("stops", [])
+    if not stops:
+        st.info("표시할 경로가 없습니다.")
+        return
+
+    center_lat = sum(s["lat"] for s in stops) / len(stops)
+    center_lng = sum(s["lng"] for s in stops) / len(stops)
+    m = folium.Map(location=[center_lat, center_lng], zoom_start=12)
+
+    label_colors = {"S": "#16a34a", "E": "#dc2626"}
+    for stop in stops:
+        label = stop["label"]
+        color = label_colors.get(label, "#2563eb")
+        folium.Marker(
+            [stop["lat"], stop["lng"]],
+            popup=stop.get("name"),
+            icon=folium.DivIcon(
+                html=(
+                    f'<div style="font-size:13px;font-weight:bold;color:white;'
+                    f"background:{color};border-radius:50%;width:28px;height:28px;"
+                    f'display:flex;align-items:center;justify-content:center;">{label}</div>'
+                )
+            ),
+        ).add_to(m)
+
+    for p in route.get("parkings", []):
+        folium.Marker(
+            [p["lat"], p["lng"]],
+            popup=p.get("name"),
+            icon=folium.DivIcon(
+                html=(
+                    f'<div style="font-size:12px;font-weight:bold;color:white;'
+                    f'background:#9333ea;border-radius:4px;padding:2px 6px;">{p["label"]}</div>'
+                )
+            ),
+        ).add_to(m)
+
+    path = [[s["lat"], s["lng"]] for s in stops]
+    if len(path) >= 2:
+        folium.PolyLine(path, color="#2563eb", weight=4, opacity=0.85).add_to(m)
+
+    st_folium(m, width=None, height=450, returned_objects=[])

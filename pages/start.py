@@ -32,11 +32,24 @@ def render() -> None:
 
 
 def _render_api_panel() -> None:
-    configured = api_status.keys_configured()
     with st.expander("API 설정 상태", expanded=st.session_state.get("run_api_check", False)):
-        for name, ok in configured.items():
+        warning = api_status.keys_validation_message()
+        if warning:
+            st.error(f"Secrets 확인 필요: {warning}")
+
+        for env_name, label in [
+            ("TMAP_APP_KEY", "TMAP"),
+            ("DATA_GO_KR_SERVICE_KEY", "DATA_GO_KR"),
+            ("OPENAI_API_KEY", "OPENAI"),
+        ]:
+            detail = api_status.key_detail(env_name)
+            ok = detail["looks_ok"]
             icon = "✅" if ok else "❌"
-            st.write(f"{icon} **{name}** — {'키 설정됨' if ok else '키 없음 (Secrets 또는 .env)'}")
+            st.write(
+                f"{icon} **{label}** — "
+                f"{'키 OK' if ok else '키 확인 필요'} "
+                f"(로드됨: `{detail['masked']}`)"
+            )
 
         if st.session_state.get("run_api_check"):
             st.divider()

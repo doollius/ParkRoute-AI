@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from typing import Any
+
+import streamlit as st
+
+from api.tmap_api import TmapApiError, get_car_route, get_walk_route
+from constants.config import WALK_TIME_LIMIT_MINUTES
+from utils.geo import coord_key
+
+WALK_LIMIT_SEC = WALK_TIME_LIMIT_MINUTES * 60
+
+
+def _cache() -> dict[str, dict[str, int]]:
+    if "tmap_route_cache" not in st.session_state:
+        st.session_state.tmap_route_cache = {}
+    return st.session_state.tmap_route_cache
+
+
+def get_travel_times(
+    from_lat: float,
+    from_lng: float,
+    to_lat: float,
+    to_lng: float,
+) -> dict[str, Any]:
+    """Return car/walk time between two coordinates (cached)."""
+    key = f"{coord_key(from_lat, from_lng)}->{coord_key(to_lat, to_lng)}"
+    cache = _cache()
+    if key in cache:
+        return cache[key]
+
+    car = get_car_route(from_lng, from_lat, to_lng, to_lat)
+    walk: dict[str, int] | None = None
+    walk_error: str | None = None
+    try:
+        walk = get_walk_route(from_lng, from_lat, to_lng, to_lat)
+    except TmapApiError as exc:
+        walk_error = str(exc)
+
+    walk_sec = walk["time_sec"] if walk else None
+    walk_allowed = walk_sec is not None and walk_sec <= WALK_LIMIT_SEC
+
+    result = {
+        "car_time_sec": car["time_sec"],
+        "car_distance_m": car["distance_m"],
+        "walk_time_sec": walk_sec,
+        "walk_distance_m": walk.get("distance_m") if walk else None,
+        "walk_allowed": walk_allowed,
+        "walk_error": walk_error,
+    }
+    cache[key] = result
+    return result
+
+
+def build_travel_matrix(nodes: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Build NxN travel data matrix for nodes with lat/lng."""
+    n = len(nodes)
+    matrix: list[list[dict[str, Any]]] = []
+    for i in range(n):
+        row: list[dict[str, Any]] = []
+        for j in range(n):
+            if i == j:
+                row.append(
+                    {
+                        "car_time_sec": 0,
+                        "car_distance_m": 0,
+                        "walk_time_sec": 0,
+                        "walk_distance_m": 0,
+                        "walk_allowed": True,
+                    }
+                )
+            else:
+                a, b = nodes[i], nodes[j]
+                row.append(get_travel_times(a["lat"], a["lng"], b["lat"], b["lng"]))
+        matrix.append(row)
+    return matrix

@@ -2,13 +2,54 @@ from __future__ import annotations
 
 import streamlit as st
 
+from pages.input import render_places_map
+from services import place_service
 from state.session_manager import go_to
 
 
 def render() -> None:
     st.title("입력 확인")
-    st.write(f"**여행 지역:** {st.session_state.travel_region or '(미입력)'}")
-    st.write(f"**장소 수:** {len(st.session_state.places)}")
+
+    region = st.session_state.get("travel_region", "")
+    mode = st.session_state.get("optimization_mode", "minimize_walk")
+    mode_label = "도보 최소화" if mode == "minimize_walk" else "총 이동시간 최소화"
+
+    start = place_service.get_place_by_id(st.session_state.get("start_place_id"))
+    end = place_service.get_place_by_id(st.session_state.get("end_place_id"))
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**여행 지역:** {region}")
+        st.markdown(f"**최적화 모드:** {mode_label}")
+        st.markdown(
+            f"**출발지:** {_place_summary(start)}"
+        )
+        st.markdown(
+            f"**도착지:** {_place_summary(end)}"
+        )
+    with col2:
+        summary = place_service.progress_summary()
+        st.metric("좌표 변환 완료", f"{summary['geocoded_count']} / {summary['place_count']}")
+
+    st.divider()
+    st.subheader("방문 장소 목록")
+
+    for i, place in enumerate(st.session_state.places):
+        with st.container(border=True):
+            st.markdown(f"**{i + 1}. {place.get('type', '-')}**")
+            st.write(place.get("normalized_address") or place.get("raw_input"))
+            if place.get("lat") is not None:
+                st.caption(f"좌표: {place['lat']:.5f}, {place['lng']:.5f}")
+            if place.get("reservation_time"):
+                st.caption(f"예약: {place['reservation_time']}")
+
+    st.divider()
+    st.subheader("입력 위치 미리보기")
+    render_places_map(
+        st.session_state.places,
+        st.session_state.get("start_place_id"),
+        st.session_state.get("end_place_id"),
+    )
 
     col1, col2 = st.columns(2)
     with col1:
@@ -17,5 +58,14 @@ def render() -> None:
             st.rerun()
     with col2:
         if st.button("최적 경로 생성 →", type="primary"):
+            st.session_state._route_computed = False
+            st.session_state.route = None
             go_to("loading")
             st.rerun()
+
+
+def _place_summary(place: dict | None) -> str:
+    if not place:
+        return "(미선택)"
+    addr = place.get("normalized_address") or place.get("raw_input") or "-"
+    return f"[{place.get('type', '-')}] {addr}"

@@ -1,24 +1,79 @@
 from __future__ import annotations
 
+import re
+from urllib.parse import quote
+
 import requests
 
 from utils.env_loader import get_env
 
 SAMPLE_ADDRESS = "부산광역시 부산진구 중앙대로 749"
 
+_PLACEHOLDER_VALUES = frozenset(
+    {
+        "",
+        "your_key",
+        "your_tmap_key",
+        "your_openai_key",
+        "your_service_key",
+        "발급받은_키",
+        "sk-...",
+    }
+)
 
-def keys_configured() -> dict[str, bool]:
+
+def _mask_key(value: str) -> str:
+    if len(value) <= 8:
+        return "(too short)"
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def key_detail(env_name: str) -> dict[str, str | bool]:
+    value = get_env(env_name)
+    lowered = value.lower().strip()
+    is_placeholder = lowered in _PLACEHOLDER_VALUES or lowered.startswith("your_")
+    looks_ok = bool(value) and not is_placeholder
     return {
-        "TMAP": bool(get_env("TMAP_APP_KEY")),
-        "DATA_GO_KR": bool(get_env("DATA_GO_KR_SERVICE_KEY")),
-        "OPENAI": bool(get_env("OPENAI_API_KEY")),
+        "configured": bool(value),
+        "looks_ok": looks_ok,
+        "masked": _mask_key(value) if value else "(empty)",
+        "is_placeholder": is_placeholder,
     }
 
 
+def keys_configured() -> dict[str, bool]:
+    return {
+        "TMAP": key_detail("TMAP_APP_KEY")["looks_ok"],
+        "DATA_GO_KR": key_detail("DATA_GO_KR_SERVICE_KEY")["looks_ok"],
+        "OPENAI": key_detail("OPENAI_API_KEY")["looks_ok"],
+    }
+
+
+def keys_validation_message() -> str | None:
+    issues: list[str] = []
+    mapping = {
+        "TMAP_APP_KEY": "TMAP",
+        "DATA_GO_KR_SERVICE_KEY": "DATA_GO_KR",
+        "OPENAI_API_KEY": "OPENAI",
+    }
+    for env_name, label in mapping.items():
+        detail = key_detail(env_name)
+        if not detail["configured"]:
+            issues.append(f"{label}: 값 없음")
+        elif detail["is_placeholder"]:
+            issues.append(f"{label}: 예시 텍스트(your_key 등)가 그대로 들어있음")
+    if not issues:
+        return None
+    return " / ".join(issues)
+
+
 def test_tmap() -> tuple[bool, str]:
-    key = get_env("TMAP_APP_KEY")
-    if not key:
+    detail = key_detail("TMAP_APP_KEY")
+    if not detail["configured"]:
         return False, "TMAP_APP_KEY 없음"
+    if detail["is_placeholder"]:
+        return False, "예시 키(your_key)가 입력됨 — .env의 실제 appKey로 교체"
+    key = get_env("TMAP_APP_KEY")
     try:
         resp = requests.get(
             "https://apis.openapi.sk.com/tmap/geo/fullAddrGeo",
@@ -32,7 +87,8 @@ def test_tmap() -> tuple[bool, str]:
             timeout=12,
         )
         if resp.status_code != 200:
-            return False, f"HTTP {resp.status_code}"
+            hint = resp.text[:120] if resp.text else ""
+            return False, f"HTTP {resp.status_code} (키={detail['masked']}) {hint}"
         coords = resp.json().get("coordinateInfo", {}).get("coordinate", [])
         if not coords:
             return False, "좌표 없음"
@@ -42,36 +98,53 @@ def test_tmap() -> tuple[bool, str]:
         return False, str(exc)
 
 
+def _parking_request(service_key: str) -> tuple[str, str]:
+    resp = requests.get(
+        "https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api",
+        params={
+            "serviceKey": service_key,
+            "pageNo": 1,
+            "numOfRows": 1,
+            "type": "json",
+            "prkplceSe": "공영",
+        },
+        timeout=15,
+    )
+    data = resp.json()
+    code = data.get("response", {}).get("header", {}).get("resultCode", "?")
+    msg = data.get("response", {}).get("header", {}).get("resultMsg", "")
+    return code, msg
+
+
 def test_parking() -> tuple[bool, str]:
-    key = get_env("DATA_GO_KR_SERVICE_KEY")
-    if not key:
+    detail = key_detail("DATA_GO_KR_SERVICE_KEY")
+    if not detail["configured"]:
         return False, "DATA_GO_KR_SERVICE_KEY 없음"
+    if detail["is_placeholder"]:
+        return False, "예시 키가 입력됨 — .env의 실제 serviceKey로 교체"
+    key = get_env("DATA_GO_KR_SERVICE_KEY")
     try:
-        resp = requests.get(
-            "https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api",
-            params={
-                "serviceKey": key,
-                "pageNo": 1,
-                "numOfRows": 1,
-                "type": "json",
-                "prkplceSe": "공영",
-            },
-            timeout=15,
-        )
-        data = resp.json()
-        code = data.get("response", {}).get("header", {}).get("resultCode")
-        if code != "00":
-            msg = data.get("response", {}).get("header", {}).get("resultMsg", "")
-            return False, f"{code} {msg}"
-        return True, "주차장 API OK"
+        for label, candidate in [
+            ("decoded", key),
+            ("encoded", quote(key, safe="")),
+        ]:
+            code, msg = _parking_request(candidate)
+            if code == "00":
+                return True, f"주차장 API OK ({label})"
+        return False, f"{code} {msg} (키={detail['masked']})"
     except Exception as exc:
         return False, str(exc)
 
 
 def test_openai() -> tuple[bool, str]:
-    key = get_env("OPENAI_API_KEY")
-    if not key:
+    detail = key_detail("OPENAI_API_KEY")
+    if not detail["configured"]:
         return False, "OPENAI_API_KEY 없음"
+    if detail["is_placeholder"]:
+        return False, "예시 키(your_key)가 입력됨 — .env의 sk-proj-... 키로 교체"
+    key = get_env("OPENAI_API_KEY")
+    if not re.match(r"^sk-", key):
+        return False, f"형식 오류 — sk- 로 시작해야 함 (키={detail['masked']})"
     try:
         from openai import OpenAI
 
@@ -85,4 +158,4 @@ def test_openai() -> tuple[bool, str]:
         text = (resp.choices[0].message.content or "").strip()
         return True, f"OpenAI OK ({text!r})"
     except Exception as exc:
-        return False, str(exc)
+        return False, f"{exc} (키={detail['masked']})"
