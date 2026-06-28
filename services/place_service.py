@@ -358,6 +358,57 @@ def get_route_endpoint_label(kind: str) -> str:
     return "(미지정)"
 
 
+def get_review_start_text() -> str:
+    if st.session_state.get("use_custom_start"):
+        node = st.session_state.get("custom_start_node") or {}
+        return (node.get("normalized_address") or node.get("raw_input") or "").strip() or "(미입력)"
+    start_id = st.session_state.get("start_place_id")
+    if start_id and start_id != PICK_NONE:
+        place = get_place_by_id(start_id)
+        if place:
+            return str(place.get("type", "")).strip() or "-"
+    return "미지정"
+
+
+def get_review_end_text() -> str:
+    if st.session_state.get("use_custom_end"):
+        node = st.session_state.get("custom_end_node") or {}
+        return (node.get("normalized_address") or node.get("raw_input") or "").strip() or "(미입력)"
+    end_id = st.session_state.get("end_place_id")
+    if end_id and end_id != PICK_NONE:
+        place = get_place_by_id(end_id)
+        if place:
+            return str(place.get("type", "")).strip() or "-"
+    return "미지정"
+
+
+def get_review_visit_types() -> list[str]:
+    """출발·도착(방문 장소 선택)으로 지정된 ID를 제외한 방문지 유형."""
+    exclude_ids: set[str] = set()
+    if not st.session_state.get("use_custom_start"):
+        start_id = st.session_state.get("start_place_id")
+        if start_id and start_id != PICK_NONE:
+            exclude_ids.add(start_id)
+    if not st.session_state.get("use_custom_end"):
+        end_id = st.session_state.get("end_place_id")
+        if end_id and end_id != PICK_NONE:
+            exclude_ids.add(end_id)
+
+    types: list[str] = []
+    for place in st.session_state.places:
+        if place["id"] in exclude_ids:
+            continue
+        name = str(place.get("type", "")).strip()
+        if name:
+            types.append(name)
+    return types
+
+
+def get_review_optimization_goal() -> str:
+    mode = st.session_state.get("optimization_mode", "minimize_walk")
+    return "도보 최소화" if mode == "minimize_walk" else "총 이동시간 최소화"
+
+
 def route_endpoint_status() -> str:
     has_start = bool(_resolved_start_place_id())
     has_end = bool(_resolved_end_place_id())
