@@ -4,7 +4,6 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
-from models.place import PLACE_TYPES, place_label
 from models.visit_rule import RULE_BEFORE, RULE_IMMEDIATE, rule_label
 from services import place_service, visit_rule_service
 from state.session_manager import go_to, reset_all
@@ -73,8 +72,6 @@ def _render_places_section() -> None:
             place_service.add_place()
             st.rerun()
 
-    _render_place_sorter()
-
     for i, place in enumerate(st.session_state.places):
         pid = place["id"]
         has_coords = place.get("lat") is not None and place.get("lng") is not None
@@ -111,7 +108,11 @@ def _render_places_section() -> None:
 
             c1, c2 = st.columns(2)
             with c1:
-                st.selectbox("유형", PLACE_TYPES, key=f"type_{pid}")
+                st.text_input(
+                    "유형 *",
+                    key=f"type_{pid}",
+                    placeholder="예: 경복궁, 현충원, SK아카데미",
+                )
             with c2:
                 st.text_input(
                     "예약 시간 (선택)",
@@ -137,24 +138,6 @@ def _render_places_section() -> None:
                     st.rerun()
                 else:
                     st.info("주소 입력 후 자동 확인되거나, '좌표 확인'을 누르세요.")
-
-
-def _render_place_sorter() -> None:
-    places = st.session_state.places
-    if len(places) < 2:
-        return
-    try:
-        from streamlit_sortables import sort_items
-    except ImportError:
-        return
-
-    st.caption("드래그하여 장소 순서를 변경할 수 있습니다.")
-    sortable = [f"{p['id']}::{place_label(p, i)}" for i, p in enumerate(places)]
-    sorted_items = sort_items(sortable, key="place_sortable")
-    ordered_ids = [item.split("::", 1)[0] for item in sorted_items]
-    if ordered_ids != [p["id"] for p in places]:
-        place_service.reorder_places(ordered_ids)
-        st.rerun()
 
 
 def _render_manual_coords(pid: str) -> None:

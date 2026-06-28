@@ -20,6 +20,15 @@ def validate_address(text: str) -> tuple[bool, str]:
     return True, ""
 
 
+def validate_place_name(value: str | None) -> tuple[bool, str]:
+    name = (value or "").strip()
+    if len(name) < 1:
+        return False, "장소 이름(유형)을 입력하세요."
+    if len(name) > 50:
+        return False, "장소 이름(유형)은 50자 이하로 입력하세요."
+    return True, ""
+
+
 def validate_reservation_time(value: str | None) -> tuple[bool, str]:
     if not value:
         return True, ""

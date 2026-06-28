@@ -6,8 +6,12 @@ import streamlit as st
 
 from api.geocode_api import resolve_address
 from api.tmap_api import TmapGeocodingError
-from models.place import create_place, place_label
-from utils.address_validator import validate_address, validate_reservation_time
+from models.place import create_place, place_selection_label
+from utils.address_validator import (
+    validate_address,
+    validate_place_name,
+    validate_reservation_time,
+)
 
 
 def ensure_default_places() -> None:
@@ -21,7 +25,7 @@ def ensure_widget_keys() -> None:
         if f"raw_{pid}" not in st.session_state:
             st.session_state[f"raw_{pid}"] = place.get("raw_input", "")
         if f"type_{pid}" not in st.session_state:
-            st.session_state[f"type_{pid}"] = place.get("type", "맛집")
+            st.session_state[f"type_{pid}"] = place.get("type", "")
         if f"res_{pid}" not in st.session_state:
             st.session_state[f"res_{pid}"] = place.get("reservation_time") or ""
 
@@ -38,7 +42,7 @@ def sync_places_from_widgets() -> None:
             place["geocode_error"] = None
             place["_geocoded_for"] = ""
 
-        place["type"] = st.session_state.get(f"type_{pid}", place.get("type", "맛집"))
+        place["type"] = str(st.session_state.get(f"type_{pid}", place.get("type", ""))).strip()
         res_raw = str(st.session_state.get(f"res_{pid}", "")).strip()
         place["reservation_time"] = res_raw or None
 
@@ -190,6 +194,9 @@ def _place_input_errors(strict_geocode: bool) -> list[str]:
     errors: list[str] = []
     for i, place in enumerate(st.session_state.places):
         raw = place.get("raw_input", "").strip()
+        type_ok, type_msg = validate_place_name(place.get("type"))
+        if not type_ok:
+            errors.append(f"장소 {i + 1}: {type_msg}")
         if len(raw) < 2:
             errors.append(f"장소 {i + 1}: 주소를 입력하세요.")
             continue
@@ -240,6 +247,9 @@ def partial_validation_errors() -> list[str]:
     valid_ids = {p["id"] for p in geocoded}
     errors.extend(_route_point_errors(valid_ids))
     for i, place in enumerate(geocoded):
+        type_ok, type_msg = validate_place_name(place.get("type"))
+        if not type_ok:
+            errors.append(f"장소 {i + 1}: {type_msg}")
         res_ok, res_msg = validate_reservation_time(place.get("reservation_time"))
         if not res_ok:
             errors.append(f"장소 {i + 1}: {res_msg}")
@@ -258,6 +268,9 @@ def places_step_errors() -> list[str]:
 
     for i, place in enumerate(st.session_state.places):
         raw = place.get("raw_input", "").strip()
+        type_ok, type_msg = validate_place_name(place.get("type"))
+        if not type_ok:
+            errors.append(f"장소 {i + 1}: {type_msg}")
         if len(raw) < 2:
             errors.append(f"장소 {i + 1}: 주소를 입력하세요.")
             continue
@@ -342,4 +355,5 @@ def progress_summary() -> dict[str, int]:
 
 
 def place_options() -> list[tuple[str, str]]:
-    return [(p["id"], place_label(p, i)) for i, p in enumerate(st.session_state.places)]
+    places = st.session_state.places
+    return [(p["id"], place_selection_label(p, i, places)) for i, p in enumerate(places)]

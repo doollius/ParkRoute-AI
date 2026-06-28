@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from models.place import place_selection_label
 from models.visit_rule import rule_label
 from pages.input import render_places_map
 from services import place_service, visit_rule_service
@@ -90,5 +91,6 @@ def render() -> None:
 def _place_summary(place: dict | None) -> str:
     if not place:
         return "(미선택)"
-    addr = place.get("normalized_address") or place.get("raw_input") or "-"
-    return f"[{place.get('type', '-')}] {addr}"
+    places = st.session_state.places
+    idx = next((i for i, p in enumerate(places) if p["id"] == place["id"]), 0)
+    return place_selection_label(place, idx, places)
