@@ -152,9 +152,19 @@ def _render_manual_coords(pid: str) -> None:
                     st.rerun()
 
 
+def _reset_rule_pick_widgets() -> None:
+    """Selectbox key 값은 위젯 렌더링 전에만 변경 가능."""
+    st.session_state.rule_from_pick = PICK_NONE
+    st.session_state.rule_to_pick = PICK_NONE
+    st.session_state.rule_type_pick = PICK_NONE
+
+
 def _render_visit_rules_section() -> None:
     st.subheader("방문 규칙 (선택)")
     st.caption("식사 후 카페처럼 **반드시 지켜야 하는 순서**를 지정합니다.")
+
+    if st.session_state.pop("_reset_rule_picks", False):
+        _reset_rule_pick_widgets()
 
     visit_rule_service.ensure_rule_widget_keys()
     options = place_service.place_options()
@@ -208,9 +218,7 @@ def _render_visit_rules_section() -> None:
             if err:
                 st.warning(err)
             elif visit_rule_service.add_rule(from_id, to_id, rule_type):
-                st.session_state.rule_from_pick = PICK_NONE
-                st.session_state.rule_to_pick = PICK_NONE
-                st.session_state.rule_type_pick = PICK_NONE
+                st.session_state._reset_rule_picks = True
                 st.rerun()
 
     rules = st.session_state.get("visit_rules", [])
