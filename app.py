@@ -5,6 +5,7 @@ import streamlit as st
 from pages import input as input_page
 from pages import loading, result, review, start
 from state.session_manager import init_session
+from utils.ui_helpers import inject_responsive_css
 
 init_session()
 
@@ -14,6 +15,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+inject_responsive_css()
 
 PAGES = {
     "start": start.render,

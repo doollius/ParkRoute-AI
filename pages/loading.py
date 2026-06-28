@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import streamlit as st
 
+from controller.route_controller import (
+    RouteOptimizationError,
+    estimate_optimization_seconds,
+    finalize_success,
+    run_optimization,
+)
 from services import place_service
-from services.route_service import RouteOptimizationError, optimize_route
 from state.session_manager import go_to
 
 
@@ -15,12 +20,14 @@ def render() -> None:
         st.rerun()
         return
 
+    places, _, excluded, _ = place_service.prepare_optimization_input()
+    n = len(places)
+    eta = estimate_optimization_seconds(n)
+    st.caption(f"장소 {n}곳 · 예상 소요 약 {eta // 60}분 {eta % 60}초 (TMAP API 호출량에 따라 달라질 수 있습니다)")
+
     progress = st.progress(0, text="준비 중...")
     status = st.empty()
-
     st.session_state.pop("parking_candidates_cache", None)
-
-    places, input_warnings, excluded, visit_rules = place_service.prepare_optimization_input()
 
     def on_progress(msg: str) -> None:
         status.caption(msg)
@@ -46,28 +53,10 @@ def render() -> None:
 
     try:
         progress.progress(0.05, text="입력 검증")
-        route = optimize_route(
-            places=places,
-            start_place_id=st.session_state.start_place_id,
-            end_place_id=st.session_state.end_place_id,
-            travel_region=st.session_state.get("travel_region", ""),
-            optimization_mode=st.session_state.get("optimization_mode", "minimize_walk"),
-            visit_rules=visit_rules,
-            trip_start_time=st.session_state.get("trip_start_time", "09:00"),
-            on_progress=on_progress,
-            input_warnings=input_warnings,
-            excluded_places=excluded,
-        )
-
-        st.session_state.route = route
-        st.session_state.optimized = True
-        st.session_state._route_computed = True
+        route = run_optimization(on_progress=on_progress)
+        finalize_success(route)
         progress.progress(1.0, text="완료!")
         status.empty()
-        if route.get("warnings"):
-            st.session_state.route_warnings = route["warnings"]
-        else:
-            st.session_state.pop("route_warnings", None)
         go_to("result")
         st.rerun()
 

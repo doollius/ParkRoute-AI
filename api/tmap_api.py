@@ -74,6 +74,51 @@ def geocode_address(address: str) -> dict[str, Any]:
     }
 
 
+def search_poi(keyword: str, count: int = 1) -> dict[str, Any]:
+    """TMAP POI search fallback when fullAddrGeo fails."""
+    resp = requests.get(
+        "https://apis.openapi.sk.com/tmap/pois",
+        params={
+            "version": "1",
+            "searchKeyword": keyword.strip(),
+            "count": count,
+            "reqCoordType": "WGS84GEO",
+            "resCoordType": "WGS84GEO",
+        },
+        headers={"appKey": get_env("TMAP_APP_KEY"), "Accept": "application/json"},
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        raise TmapApiError(f"TMAP POI 검색 실패 (HTTP {resp.status_code})")
+
+    data = resp.json()
+    pois = data.get("searchPoiInfo", {}).get("pois", {}).get("poi", [])
+    if isinstance(pois, dict):
+        pois = [pois]
+    if not pois:
+        raise TmapApiError("POI 검색 결과가 없습니다.")
+
+    poi = pois[0]
+    lat = poi.get("frontLat") or poi.get("noorLat")
+    lon = poi.get("frontLon") or poi.get("noorLon")
+    if not lat or not lon:
+        raise TmapApiError("POI 좌표가 없습니다.")
+
+    name = (poi.get("name") or keyword).strip()
+    road = (poi.get("newAddressList", {}).get("newAddress", [{}])[0].get("fullAddressStreet")
+            if isinstance(poi.get("newAddressList"), dict) else None)
+    if not road:
+        road = (poi.get("upperAddrName") or "") + " " + (poi.get("middleAddrName") or "")
+        road = (road + " " + (poi.get("lowerAddrName") or "")).strip()
+    normalized = road or name
+
+    return {
+        "lat": float(lat),
+        "lng": float(lon),
+        "normalized_address": normalized,
+    }
+
+
 def get_car_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float) -> dict[str, int]:
     resp = requests.post(
         "https://apis.openapi.sk.com/tmap/routes",

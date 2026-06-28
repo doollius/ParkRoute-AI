@@ -21,6 +21,7 @@ def init_session() -> None:
         "run_api_check": False,
         "_route_computed": False,
         "tmap_route_cache": {},
+        "geocode_cache": {},
     }
     for key, value in defaults.items():
         if key not in st.session_state:

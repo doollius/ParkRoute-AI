@@ -4,7 +4,8 @@ from typing import Any
 
 import streamlit as st
 
-from api.tmap_api import TmapGeocodingError, geocode_address
+from api.geocode_api import resolve_address
+from api.tmap_api import TmapGeocodingError
 from models.place import create_place, place_label
 from utils.address_validator import validate_address, validate_reservation_time
 
@@ -76,12 +77,17 @@ def geocode_pending_places() -> None:
             continue
 
         try:
-            result = geocode_address(raw)
+            result = resolve_address(raw)
             place["lat"] = result["lat"]
             place["lng"] = result["lng"]
             place["normalized_address"] = result["normalized_address"]
             place["geocode_error"] = None
             place["_geocoded_for"] = raw
+            if result.get("source") == "poi":
+                note = result.get("geocode_note") or "POI 검색으로 좌표를 확인했습니다."
+                place["_geocode_note"] = note
+            else:
+                place.pop("_geocode_note", None)
         except TmapGeocodingError as exc:
             place["geocode_error"] = str(exc)
             place["lat"] = None
@@ -108,6 +114,32 @@ def move_place(place_id: str, direction: int) -> None:
     if new_idx < 0 or new_idx >= len(places):
         return
     places[idx], places[new_idx] = places[new_idx], places[idx]
+
+
+def reorder_places(ordered_ids: list[str]) -> None:
+    id_to_place = {p["id"]: p for p in st.session_state.places}
+    if set(ordered_ids) != set(id_to_place):
+        return
+    st.session_state.places = [id_to_place[pid] for pid in ordered_ids]
+
+
+def set_manual_coords(place_id: str, lat: float, lng: float) -> str | None:
+    if not (-90.0 <= lat <= 90.0):
+        return "위도는 -90 ~ 90 범위여야 합니다."
+    if not (-180.0 <= lng <= 180.0):
+        return "경도는 -180 ~ 180 범위여야 합니다."
+    place = get_place_by_id(place_id)
+    if not place:
+        return "장소를 찾을 수 없습니다."
+    raw = place.get("raw_input", "").strip()
+    place["lat"] = lat
+    place["lng"] = lng
+    place["normalized_address"] = raw or f"{lat:.5f}, {lng:.5f}"
+    place["geocode_error"] = None
+    place["_geocoded_for"] = raw
+    place["_manual_coords"] = True
+    place.pop("_geocode_note", None)
+    return None
 
 
 def delete_place(place_id: str) -> None:

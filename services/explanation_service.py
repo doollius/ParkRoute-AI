@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from api.openai_api import generate_chat_completion
 from utils.env_loader import get_env
 
 
@@ -38,8 +39,6 @@ def _generate_openai(route: dict[str, Any]) -> str:
     if not key or key.lower().startswith("your"):
         return _generate_template(route)
 
-    from openai import OpenAI
-
     summary = route.get("summary", {})
     stop_lines = []
     for s in route.get("stops", []):
@@ -56,15 +55,7 @@ def _generate_openai(route: dict[str, Any]) -> str:
     if summary.get("parking_cost_won"):
         prompt += f", 예상 주차비 {summary['parking_cost_won']:,}원"
 
-    client = OpenAI(api_key=key)
-    model = get_env("OPENAI_MODEL", "gpt-4o-mini")
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": "You are a Korean travel route assistant for ParkRoute AI."},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=300,
+    return generate_chat_completion(
+        prompt,
+        "You are a Korean travel route assistant for ParkRoute AI.",
     )
-    text = (resp.choices[0].message.content or "").strip()
-    return text or _generate_template(route)

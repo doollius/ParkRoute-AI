@@ -4,9 +4,11 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
+from models.route import RouteResult
 from optimizer.scoring import format_duration
 from state.session_manager import go_to
 from utils.parking_cost import format_won
+from utils.ui_helpers import is_confirm_pending, render_confirm_box, request_confirm
 
 
 def render() -> None:
@@ -33,19 +35,31 @@ def render() -> None:
     if route.get("message") and route["message"] != "최적 경로가 생성되었습니다.":
         st.info(route["message"])
 
-    summary = route.get("summary", {})
+    parsed = RouteResult.from_dict(route)
+    summary = parsed.summary
     col_left, col_right = st.columns([1, 2])
 
     with col_left:
         st.subheader("방문 순서")
-        for stop in route.get("stops", []):
+        for stop in parsed.stops:
             extra = ""
-            if stop.get("reservation_time"):
-                extra = f" · 예약 {stop['reservation_time']}"
-            arrival = stop.get("arrival_time")
-            if arrival:
-                extra += f" · 예상 도착 {arrival}"
-            st.write(f"**{stop['label']}** — [{stop.get('type', '-')}] {stop.get('name', '')}{extra}")
+            if stop.reservation_time:
+                extra = f" · 예약 {stop.reservation_time}"
+            if stop.arrival_time:
+                extra += f" · 예상 도착 {stop.arrival_time}"
+            st.write(f"**{stop.label}** — [{stop.type or '-'}] {stop.name}{extra}")
+
+        st.divider()
+        st.subheader("구간별 이동 (TMAP)")
+        for seg in parsed.segments:
+            mode_label = "🚗 차량" if seg.mode == "car" else "🚶 도보"
+            dist = f" · {seg.distance_m // 1000}km" if seg.distance_m >= 1000 else (
+                f" · {seg.distance_m}m" if seg.distance_m else ""
+            )
+            st.caption(
+                f"{seg.from_label} → {seg.to_label}: "
+                f"{mode_label} {format_duration(seg.time_sec)}{dist}"
+            )
 
         st.divider()
         st.subheader("이동 요약")
@@ -84,17 +98,27 @@ def render() -> None:
                     f"총 예상 주차비 {format_won(parking_cost)} — "
                     "실제 요금은 현장·운영 정책에 따라 달라질 수 있습니다."
                 )
-            elif route["parkings"]:
-                st.caption("요금은 현장·운영 정책에 따라 달라질 수 있습니다.")
 
-        if route.get("explanation"):
+        if parsed.explanation:
             st.divider()
             st.subheader("AI 추천 이유")
-            st.info(route["explanation"])
+            st.info(parsed.explanation)
 
     with col_right:
         st.subheader("경로 지도")
         _render_route_map(route)
+
+    if is_confirm_pending("confirm_home"):
+        action = render_confirm_box(
+            "confirm_home",
+            "입력 화면으로 돌아갑니다. **입력 내용은 유지됩니다.**",
+            confirm_label="확인",
+            cancel_label="취소",
+        )
+        if action == "confirm":
+            st.session_state._route_computed = False
+            go_to("input")
+            st.rerun()
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -104,7 +128,7 @@ def render() -> None:
             st.rerun()
     with col2:
         if st.button("← 처음으로"):
-            go_to("start")
+            request_confirm("confirm_home")
             st.rerun()
     with col3:
         if st.button("재계산"):

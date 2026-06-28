@@ -4,11 +4,12 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 
-from models.place import PLACE_TYPES
+from models.place import PLACE_TYPES, place_label
 from models.visit_rule import RULE_BEFORE, RULE_IMMEDIATE, rule_label
 from services import place_service, visit_rule_service
 from state.session_manager import go_to, reset_all
 from utils.time_utils import hhmm_to_minutes
+from utils.ui_helpers import is_confirm_pending, render_confirm_box, request_confirm
 
 
 def render() -> None:
@@ -55,6 +56,8 @@ def _render_places_section() -> None:
         if st.button("+ 장소 추가", use_container_width=True):
             place_service.add_place()
             st.rerun()
+
+    _render_place_sorter()
 
     for i, place in enumerate(st.session_state.places):
         pid = place["id"]
@@ -105,14 +108,54 @@ def _render_places_section() -> None:
                     f"좌표 확인 · {place.get('normalized_address') or place.get('raw_input')} "
                     f"({place['lat']:.5f}, {place['lng']:.5f})"
                 )
+                if place.get("_geocode_note"):
+                    st.caption(place["_geocode_note"])
+                if place.get("_manual_coords"):
+                    st.caption("수동 입력 좌표")
             elif error:
                 st.error(error)
+                _render_manual_coords(pid)
             elif place.get("raw_input", "").strip():
                 if st.button("좌표 확인", key=f"geo_{pid}"):
                     place["_force_geocode"] = True
                     st.rerun()
                 else:
                     st.info("주소 입력 후 자동 확인되거나, '좌표 확인'을 누르세요.")
+
+
+def _render_place_sorter() -> None:
+    places = st.session_state.places
+    if len(places) < 2:
+        return
+    try:
+        from streamlit_sortables import sort_items
+    except ImportError:
+        return
+
+    st.caption("드래그하여 장소 순서를 변경할 수 있습니다.")
+    sortable = [f"{p['id']}::{place_label(p, i)}" for i, p in enumerate(places)]
+    sorted_items = sort_items(sortable, key="place_sortable")
+    ordered_ids = [item.split("::", 1)[0] for item in sorted_items]
+    if ordered_ids != [p["id"] for p in places]:
+        place_service.reorder_places(ordered_ids)
+        st.rerun()
+
+
+def _render_manual_coords(pid: str) -> None:
+    with st.expander("수동 좌표 입력 (ER-004)", expanded=False):
+        st.caption("Geocoding 실패 시 위·경도를 직접 입력하세요. (예: 35.158, 129.060)")
+        c1, c2 = st.columns(2)
+        lat = c1.number_input("위도 (lat)", key=f"mlat_{pid}", format="%.6f", value=0.0)
+        lng = c2.number_input("경도 (lng)", key=f"mlng_{pid}", format="%.6f", value=0.0)
+        if st.button("좌표 적용", key=f"mapply_{pid}"):
+            if lat == 0.0 and lng == 0.0:
+                st.error("유효한 좌표를 입력하세요.")
+            else:
+                err = place_service.set_manual_coords(pid, lat, lng)
+                if err:
+                    st.error(err)
+                else:
+                    st.rerun()
 
 
 def _render_visit_rules_section() -> None:
@@ -240,6 +283,19 @@ def _render_progress() -> None:
 
 
 def _render_actions() -> None:
+    if is_confirm_pending("confirm_reset"):
+        action = render_confirm_box(
+            "confirm_reset",
+            "모든 입력을 삭제합니다. 계속하시겠습니까?",
+            confirm_label="삭제",
+            cancel_label="취소",
+        )
+        if action == "confirm":
+            reset_all()
+            st.rerun()
+        if action == "pending":
+            return
+
     col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("← 시작 화면"):
@@ -247,7 +303,7 @@ def _render_actions() -> None:
             st.rerun()
     with col2:
         if st.button("초기화"):
-            reset_all()
+            request_confirm("confirm_reset")
             st.rerun()
     with col3:
         partial = place_service.uses_partial_geocoding() and place_service.can_complete()
