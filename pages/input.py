@@ -404,12 +404,9 @@ def _render_places_actions() -> None:
         if action == "pending":
             return
 
-    with bottom_action_row(3) as (left, center, right):
-        if bottom_button(left, "← 시작 화면"):
+    with bottom_action_row(2) as (left, right):
+        if bottom_button(left, "← 이전"):
             go_to("start")
-            st.rerun()
-        if bottom_button(center, "초기화"):
-            request_confirm("confirm_reset")
             st.rerun()
         if bottom_button(
             right,
@@ -418,6 +415,12 @@ def _render_places_actions() -> None:
             disabled=not place_service.can_proceed_to_trip_step(),
         ):
             st.session_state.input_step = "trip"
+            st.rerun()
+
+    st.divider()
+    with bottom_action_row(2) as (left, _):
+        if bottom_button(left, "초기화"):
+            request_confirm("confirm_reset")
             st.rerun()
 
 
@@ -438,21 +441,19 @@ def _render_trip_actions() -> None:
     partial = place_service.uses_partial_geocoding() and place_service.can_complete()
     complete_label = "입력 완료 (일부 제외) →" if partial and place_service.validation_errors() else "입력 완료 →"
 
-    with bottom_action_row(3) as (left, center, right):
-        if bottom_button(left, "← 시작 화면"):
-            go_to("start")
-            st.rerun()
-        if bottom_button(center, "초기화"):
-            request_confirm("confirm_reset")
+    with bottom_action_row(2) as (left, right):
+        if bottom_button(left, "← 이전"):
+            st.session_state.input_step = "places"
             st.rerun()
         if bottom_button(right, complete_label, type="primary", disabled=not place_service.can_complete()):
             go_to("review")
             st.rerun()
 
     st.divider()
-    if st.button("← 이전", use_container_width=True):
-        st.session_state.input_step = "places"
-        st.rerun()
+    with bottom_action_row(2) as (left, _):
+        if bottom_button(left, "초기화"):
+            request_confirm("confirm_reset")
+            st.rerun()
 
 
 def render_places_map(places: list, start_id: str | None, end_id: str | None) -> None:
