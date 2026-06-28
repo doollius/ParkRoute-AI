@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from optimizer.parking_graph import ClusterPlan, parking_for_leg_indices
 from optimizer.scoring import choose_segment_mode
 from services.map_service import get_travel_times
 from services.parking_service import get_parking_candidates, pick_parking_for_places
+from utils.parking_cost import calculate_parking_cost
 from utils.time_utils import minutes_to_hhmm
 
 
@@ -84,6 +86,7 @@ def build_parking_aware_route(
     end_idx: int,
     travel_region: str,
     trip_start_minutes: int,
+    cluster_plan: ClusterPlan | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     legs = _split_order_into_legs(order, travel_matrix)
     candidates = get_parking_candidates(nodes, travel_region)
@@ -92,6 +95,7 @@ def build_parking_aware_route(
     stops: list[dict[str, Any]] = []
     segments: list[dict[str, Any]] = []
     parkings_meta: list[dict[str, Any]] = []
+    parking_stay: dict[str, int] = {}
     current_minutes = trip_start_minutes
     visit_num = 0
     parking_num = 0
@@ -107,6 +111,19 @@ def build_parking_aware_route(
         to_s["arrival_time"] = minutes_to_hhmm(current_minutes)
         stops.append(to_s)
         prev_stop = to_s
+
+    def finalize_parking_stay(parking_id: str, depart_minutes: int) -> None:
+        if parking_id not in parking_stay:
+            return
+        arrive = parking_stay.pop(parking_id)
+        stay = max(1, depart_minutes - arrive)
+        for meta in parkings_meta:
+            if meta["id"] == parking_id:
+                cost = calculate_parking_cost(meta, stay)
+                meta["stay_minutes"] = stay
+                meta["estimated_cost"] = cost["estimated_cost"]
+                meta["cost_detail"] = cost
+                break
 
     for leg in legs:
         if not leg:
@@ -129,13 +146,18 @@ def build_parking_aware_route(
             add_travel(prev_stop, _node_stop(node, label))
             continue
 
-        parking = pick_parking_for_places(leg, nodes, candidates, used_parking_ids, get_travel_times)
+        parking = None
+        if cluster_plan:
+            parking = parking_for_leg_indices(leg, cluster_plan)
+        if not parking:
+            parking = pick_parking_for_places(leg, nodes, candidates, used_parking_ids, get_travel_times)
         parking_num += 1
         p_label = f"P{parking_num}"
 
         if parking:
             parkings_meta.append({**parking, "label": p_label})
             p_stop = _parking_stop(parking, p_label)
+            parking_stay[parking["id"]] = current_minutes
 
             if prev_stop is None:
                 first = nodes[leg[0]]
@@ -160,6 +182,8 @@ def build_parking_aware_route(
                     visit_num += 1
                     label = str(visit_num)
                 add_travel(prev_stop, _node_stop(node, label), prefer_walk=True)
+
+            finalize_parking_stay(parking["id"], current_minutes)
         else:
             for idx in leg:
                 node = nodes[idx]

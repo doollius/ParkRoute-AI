@@ -5,8 +5,14 @@ from typing import Any
 import requests
 import streamlit as st
 
+from constants.config import (
+    PARKING_CANDIDATES_PER_CLUSTER,
+    PARKING_SCORE_DIST_WEIGHT,
+    PARKING_SCORE_FEE_WEIGHT,
+)
 from utils.env_loader import get_env
 from utils.geo import haversine_m
+from utils.parking_cost import parse_fee, parse_minutes
 
 PARKING_API_URL = "https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api"
 
@@ -34,6 +40,9 @@ def _normalize_item(item: dict[str, Any]) -> dict[str, Any] | None:
         "lng": lng,
         "capacity": item.get("prkcmprt") or item.get("parkingSpace"),
         "base_fee": item.get("bscParkingChrge") or item.get("baseRate"),
+        "unit_fee": item.get("addParkingChrge") or item.get("addRate"),
+        "base_time_minutes": parse_minutes(item.get("bscTime"), 30),
+        "unit_time_minutes": parse_minutes(item.get("addUnitTime"), 10),
     }
 
 
@@ -117,7 +126,20 @@ def get_parking_candidates(places: list[dict[str, Any]], region: str) -> list[di
     return candidates
 
 
-def pick_parking_for_places(
+def score_parking(
+    candidate: dict[str, Any],
+    center_lat: float,
+    center_lng: float,
+) -> float:
+    """Rules.md §6.2 — lower is better."""
+    dist = haversine_m(center_lat, center_lng, candidate["lat"], candidate["lng"])
+    fee = parse_fee(candidate.get("base_fee")) or 0
+    dist_norm = min(dist, 2000) / 2000
+    fee_norm = min(fee, 10000) / 10000
+    return dist_norm * PARKING_SCORE_DIST_WEIGHT + fee_norm * PARKING_SCORE_FEE_WEIGHT
+
+
+def select_parking_for_cluster(
     place_indices: list[int],
     nodes: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
@@ -132,10 +154,10 @@ def pick_parking_for_places(
 
     ranked = sorted(
         candidates,
-        key=lambda p: haversine_m(center_lat, center_lng, p["lat"], p["lng"]),
+        key=lambda p: score_parking(p, center_lat, center_lng),
     )
 
-    for candidate in ranked[:8]:
+    for candidate in ranked[:PARKING_CANDIDATES_PER_CLUSTER]:
         if candidate["id"] in used_ids:
             continue
         ok = True
@@ -148,6 +170,16 @@ def pick_parking_for_places(
             used_ids.add(candidate["id"])
             return {**candidate, "place_ids": [nodes[i]["id"] for i in place_indices]}
     return None
+
+
+def pick_parking_for_places(
+    place_indices: list[int],
+    nodes: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    used_ids: set[str],
+    get_walk_leg,
+) -> dict[str, Any] | None:
+    return select_parking_for_cluster(place_indices, nodes, candidates, used_ids, get_walk_leg)
 
 
 def assign_parking_to_clusters(

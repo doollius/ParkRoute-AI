@@ -6,6 +6,7 @@ from streamlit_folium import st_folium
 
 from optimizer.scoring import format_duration
 from state.session_manager import go_to
+from utils.parking_cost import format_won
 
 
 def render() -> None:
@@ -43,6 +44,9 @@ def render() -> None:
         if route.get("visit_rules_applied"):
             st.caption(f"적용된 방문 규칙: {route['visit_rules_applied']}건")
         st.metric("주차장", f"{summary.get('parking_count', 0)}곳")
+        parking_cost = summary.get("parking_cost_won")
+        if parking_cost:
+            st.metric("예상 주차비", format_won(parking_cost))
         if summary.get("total_distance_m"):
             st.caption(f"총 거리 약 {summary['total_distance_m'] // 1000}km")
 
@@ -50,14 +54,25 @@ def render() -> None:
             st.divider()
             st.subheader("추천 주차장")
             for p in route["parkings"]:
-                fee = p.get("base_fee")
-                fee_text = f" · 기본요금 {fee}" if fee else ""
-                st.write(f"**{p['label']}** {p['name']}{fee_text}")
+                fee = p.get("estimated_cost")
+                if fee is not None:
+                    fee_text = f" · 예상 {format_won(fee)}"
+                elif p.get("base_fee"):
+                    fee_text = f" · 기본요금 {p['base_fee']}"
+                else:
+                    fee_text = ""
+                stay = p.get("stay_minutes")
+                stay_text = f" · 체류 약 {stay}분" if stay else ""
+                st.write(f"**{p['label']}** {p['name']}{fee_text}{stay_text}")
                 if p.get("address"):
                     st.caption(p["address"])
-            fees = [p.get("base_fee") for p in route["parkings"] if p.get("base_fee")]
-            if fees:
-                st.caption(f"주차장 {len(fees)}곳 — 요금은 현장·운영 정책에 따라 달라질 수 있습니다.")
+            if parking_cost:
+                st.caption(
+                    f"총 예상 주차비 {format_won(parking_cost)} — "
+                    "실제 요금은 현장·운영 정책에 따라 달라질 수 있습니다."
+                )
+            elif route["parkings"]:
+                st.caption("요금은 현장·운영 정책에 따라 달라질 수 있습니다.")
 
         if route.get("explanation"):
             st.divider()

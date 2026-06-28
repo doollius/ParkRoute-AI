@@ -4,7 +4,7 @@ from typing import Any
 
 from constants.config import MAX_GRAPH_NODES
 from optimizer.constraint_builder import map_rules_to_indices
-from optimizer.graph_builder import build_cost_matrix
+from optimizer.parking_graph import build_cluster_aware_cost_matrix, build_cluster_plan
 from optimizer.ortools_solver import solve_route_order
 from optimizer.route_reconstruction import build_parking_aware_route
 from optimizer.scoring import build_route_summary
@@ -39,7 +39,10 @@ def optimize_route(
 
     travel_matrix = build_travel_matrix(nodes)
     minimize_walk = optimization_mode != "minimize_time"
-    cost_matrix = build_cost_matrix(travel_matrix, minimize_walk)
+    cluster_plan = build_cluster_plan(nodes, travel_matrix, travel_region)
+    cost_matrix = build_cluster_aware_cost_matrix(
+        travel_matrix, cluster_plan, nodes, minimize_walk
+    )
 
     trip_start_minutes = hhmm_to_minutes(trip_start_time) or 9 * 60
     reservation_by_index: dict[int, int] = {}
@@ -76,9 +79,10 @@ def optimize_route(
         end_idx,
         travel_region,
         trip_start_minutes,
+        cluster_plan=cluster_plan,
     )
 
-    summary = build_route_summary(segments, len(parkings))
+    summary = build_route_summary(segments, parkings)
     route: dict[str, Any] = {
         "order": [nodes[i]["id"] for i in order],
         "stops": stops,
@@ -92,6 +96,10 @@ def optimize_route(
                 "lng": p["lng"],
                 "place_ids": p.get("place_ids", []),
                 "base_fee": p.get("base_fee"),
+                "unit_fee": p.get("unit_fee"),
+                "stay_minutes": p.get("stay_minutes"),
+                "estimated_cost": p.get("estimated_cost"),
+                "cost_detail": p.get("cost_detail"),
             }
             for i, p in enumerate(parkings)
         ],

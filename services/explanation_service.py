@@ -25,6 +25,9 @@ def _generate_template(route: dict[str, Any]) -> str:
     if parkings:
         names = ", ".join(p["name"] for p in parkings[:3])
         lines.append(f"근처 공영주차장({names})을 기준으로 동선을 묶었습니다.")
+    parking_cost = summary.get("parking_cost_won")
+    if parking_cost:
+        lines.append(f"예상 주차비는 약 {parking_cost:,}원입니다.")
     return " ".join(lines)
 
 
@@ -48,6 +51,8 @@ def _generate_openai(route: dict[str, Any]) -> str:
         f"도보 {summary.get('walk_time_sec', 0) // 60}분, "
         f"주차 {summary.get('parking_count', 0)}회"
     )
+    if summary.get("parking_cost_won"):
+        prompt += f", 예상 주차비 {summary['parking_cost_won']:,}원"
 
     client = OpenAI(api_key=key)
     model = get_env("OPENAI_MODEL", "gpt-4o-mini")
