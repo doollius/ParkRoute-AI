@@ -38,7 +38,9 @@ def build_route_summary(
 
 
 def format_duration(seconds: int) -> str:
-    minutes = max(1, seconds // 60)
+    if seconds <= 0:
+        return "0분"
+    minutes = (seconds + 59) // 60
     if minutes < 60:
         return f"{minutes}분"
     h, m = divmod(minutes, 60)
