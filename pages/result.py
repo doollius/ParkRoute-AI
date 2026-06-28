@@ -8,7 +8,7 @@ from models.route import RouteResult
 from optimizer.scoring import format_duration
 from state.session_manager import go_to
 from utils.parking_cost import format_won
-from utils.ui_helpers import is_confirm_pending, render_confirm_box, request_confirm
+from utils.ui_helpers import bottom_action_row, is_confirm_pending, render_confirm_box, request_confirm
 
 
 def render() -> None:
@@ -119,19 +119,16 @@ def render() -> None:
             go_to("input")
             st.rerun()
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("← 입력 수정"):
+    with bottom_action_row(3) as (left, center, right):
+        if left.button("← 입력 수정"):
             st.session_state._route_computed = False
             st.session_state.input_step = "trip"
             go_to("input")
             st.rerun()
-    with col2:
-        if st.button("← 처음으로"):
+        if center.button("← 처음으로"):
             request_confirm("confirm_home")
             st.rerun()
-    with col3:
-        if st.button("재계산"):
+        if right.button("재계산"):
             st.session_state._route_computed = False
             st.session_state.pop("parking_candidates_cache", None)
             st.session_state.pop("tmap_route_cache", None)

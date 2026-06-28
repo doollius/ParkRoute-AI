@@ -7,6 +7,7 @@ import streamlit as st
 from constants.config import APP_TAGLINE, APP_TITLE
 from services import api_status
 from state.session_manager import go_to
+from utils.ui_helpers import bottom_action_row
 
 _LIVE_TESTS: list[tuple[str, Callable[[], tuple[bool, str]]]] = [
     ("TMAP", api_status.test_tmap),
@@ -43,16 +44,13 @@ def render() -> None:
 
     can_start = st.session_state.get("api_check_all_passed", False)
 
-    col1, col2, _ = st.columns([1, 1, 2])
-    with col1:
-        if st.button("API 연결 확인", use_container_width=True):
+    with bottom_action_row(2) as (left, right):
+        if left.button("API 연결 확인"):
             _run_live_api_check()
             st.rerun()
-    with col2:
-        if st.button(
+        if right.button(
             "시작하기",
             type="primary",
-            use_container_width=True,
             disabled=not can_start,
         ):
             st.session_state.input_step = "places"

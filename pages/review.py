@@ -5,6 +5,7 @@ import streamlit as st
 from models.visit_rule import rule_label
 from services import place_service, visit_rule_service
 from state.session_manager import go_to
+from utils.ui_helpers import bottom_action_row
 
 
 def render() -> None:
@@ -45,14 +46,12 @@ def render() -> None:
     st.write(place_service.get_review_optimization_goal())
 
     st.divider()
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("← 수정하기"):
+    with bottom_action_row(2) as (left, right):
+        if left.button("← 수정하기"):
             st.session_state.input_step = "trip"
             go_to("input")
             st.rerun()
-    with col2:
-        if st.button("최적 경로 생성 →", type="primary"):
+        if right.button("최적 경로 생성 →", type="primary"):
             st.session_state._route_computed = False
             st.session_state.route = None
             st.session_state.pop("parking_candidates_cache", None)

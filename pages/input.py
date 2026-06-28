@@ -7,7 +7,7 @@ from streamlit_folium import st_folium
 from models.visit_rule import PICK_NONE, RULE_BEFORE, RULE_IMMEDIATE, rule_label
 from services import place_service, visit_rule_service
 from state.session_manager import go_to, reset_all
-from utils.ui_helpers import is_confirm_pending, render_confirm_box, request_confirm
+from utils.ui_helpers import bottom_action_row, is_confirm_pending, render_confirm_box, request_confirm
 
 
 def render() -> None:
@@ -404,17 +404,14 @@ def _render_places_actions() -> None:
         if action == "pending":
             return
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("← 시작 화면"):
+    with bottom_action_row(3) as (left, center, right):
+        if left.button("← 시작 화면"):
             go_to("start")
             st.rerun()
-    with col2:
-        if st.button("초기화"):
+        if center.button("초기화"):
             request_confirm("confirm_reset")
             st.rerun()
-    with col3:
-        if st.button(
+        if right.button(
             "다음 →",
             type="primary",
             disabled=not place_service.can_proceed_to_trip_step(),
@@ -440,17 +437,14 @@ def _render_trip_actions() -> None:
     partial = place_service.uses_partial_geocoding() and place_service.can_complete()
     complete_label = "입력 완료 (일부 제외) →" if partial and place_service.validation_errors() else "입력 완료 →"
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("← 시작 화면"):
+    with bottom_action_row(3) as (left, center, right):
+        if left.button("← 시작 화면"):
             go_to("start")
             st.rerun()
-    with col2:
-        if st.button("초기화"):
+        if center.button("초기화"):
             request_confirm("confirm_reset")
             st.rerun()
-    with col3:
-        if st.button(complete_label, type="primary", disabled=not place_service.can_complete()):
+        if right.button(complete_label, type="primary", disabled=not place_service.can_complete()):
             go_to("review")
             st.rerun()
 
