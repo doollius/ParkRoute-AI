@@ -4,7 +4,7 @@ import re
 
 URL_PATTERN = re.compile(r"https?://|www\.|naver\.me|map\.naver", re.IGNORECASE)
 ADMIN_PATTERN = re.compile(
-    r"(특별자치)?[가-힣]+(특별시|광역시|특별자치시|특별자치도|도|[가-힣]+시|[가-힣]+군|[가-힣]+구)"
+    r"(특별자치)?[가-힣]+(특별시|광역시|특별자치시|특별자치도|도|[가-힣]+시(?!장)|[가-힣]+군|[가-힣]+구)"
 )
 
 

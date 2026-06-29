@@ -6,7 +6,6 @@ from typing import Any, Literal
 import streamlit as st
 
 from api.tmap_api import TmapApiError, geocode_address, search_pois
-from utils.address_validator import validate_address
 
 ResolveStatus = Literal["confirmed", "pick", "failed"]
 
@@ -57,7 +56,11 @@ def resolve_address(address: str) -> dict[str, Any]:
 
 def resolve_place_query(query: str, *, max_candidates: int = 5) -> dict[str, Any]:
     """
-    장소명·주소·상호명 통합 검색.
+    장소명 POI 검색 (TMAP /tmap/pois).
+
+    장소명 입력란은 주소가 아닌 POI 검색 대상으로만 처리합니다.
+    주소 지오코딩은 resolve_address() — 직접 주소 입력 모드에서만 사용합니다.
+
     Returns:
       status: confirmed | pick | failed
       candidates: list (pick 시)
@@ -67,25 +70,6 @@ def resolve_place_query(query: str, *, max_candidates: int = 5) -> dict[str, Any
     text = query.strip()
     if not text:
         return {"status": "failed", "error": "검색어가 비어 있습니다."}
-
-    addr_ok, _ = validate_address(text)
-    if addr_ok:
-        try:
-            result = resolve_address(text)
-            return {
-                "status": "confirmed",
-                "result": {
-                    "lat": result["lat"],
-                    "lng": result["lng"],
-                    "normalized_address": result["normalized_address"],
-                    "matched_name": result["normalized_address"],
-                    "poi_category": result.get("poi_category"),
-                    "middle_biz_name": result.get("middle_biz_name"),
-                    "lower_biz_name": result.get("lower_biz_name"),
-                },
-            }
-        except TmapApiError as exc:
-            return {"status": "failed", "error": str(exc)}
 
     try:
         pois = search_pois(text, count=max_candidates)
