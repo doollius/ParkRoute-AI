@@ -119,9 +119,9 @@ def build_travel_matrix(
                 if on_progress and j != i:
                     done = i * n + j
                     pct = min(99, int(done / total_pairs * 100))
-                    on_progress(f"이동시간 계산 중... ({pct}%)")
+                    on_progress(f"1/4 이동시간 계산 중… ({pct}%)")
         matrix.append(row)
 
     if estimated_count and on_progress:
-        on_progress(f"이동시간 계산 완료 (일부 구간 추정 {estimated_count}건)")
+        on_progress(f"1/4 이동시간 계산 완료 (일부 구간 추정 {estimated_count}건)")
     return matrix

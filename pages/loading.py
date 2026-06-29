@@ -1,15 +1,44 @@
 from __future__ import annotations
 
+import time
+
 import streamlit as st
 
 from controller.route_controller import (
     RouteOptimizationError,
-    estimate_optimization_seconds,
+    format_eta_range,
     finalize_success,
     run_optimization,
 )
 from services import place_service
 from state.session_manager import go_to
+
+
+def _progress_fraction(msg: str) -> float:
+    if msg.startswith("1/4"):
+        if "%" in msg:
+            try:
+                pct = int(msg.split("(")[1].split("%")[0])
+                return 0.05 + pct / 100 * 0.35
+            except (IndexError, ValueError):
+                return 0.15
+        if "완료" in msg:
+            return 0.4
+        return 0.1
+    if msg.startswith("2/4"):
+        return 0.42 if "완료" in msg else 0.38
+    if msg.startswith("3/4"):
+        try:
+            part = msg.split("(")[1].split(")")[0]
+            done_s, total_s = part.split("/")
+            return 0.45 + int(done_s) / max(1, int(total_s)) * 0.3
+        except (IndexError, ValueError):
+            return 0.55
+    if "OR-Tools" in msg or "최적화" in msg:
+        return 0.78
+    if "재구성" in msg:
+        return 0.9
+    return 0.1
 
 
 def render() -> None:
@@ -22,38 +51,29 @@ def render() -> None:
 
     places, _, excluded, _ = place_service.prepare_optimization_input()
     n = len(places)
-    eta = estimate_optimization_seconds(n)
-    st.caption(f"장소 {n}곳 · 예상 소요 약 {eta // 60}분 {eta % 60}초 (TMAP API 호출량에 따라 달라질 수 있습니다)")
+    st.caption(
+        f"장소 {n}곳 · 예상 소요 {format_eta_range(n)} "
+        "(외부 지도 API 호출 — 네트워크에 따라 더 걸릴 수 있습니다)"
+    )
+    st.caption("창을 닫지 마세요. 지도·주차장 데이터를 불러오는 중입니다.")
 
-    progress = st.progress(0, text="준비 중...")
+    started = time.time()
+    progress = st.progress(0, text="준비 중…")
     status = st.empty()
     st.session_state.pop("parking_candidates_cache", None)
+    st.session_state.pop("_route_explanation", None)
+    st.session_state.pop("_route_explanation_key", None)
 
     def on_progress(msg: str) -> None:
-        status.caption(msg)
-        if "OR-Tools" in msg:
-            progress.progress(0.75, text=msg)
-        elif "경로 재구성" in msg:
-            progress.progress(0.9, text=msg)
-        elif "주차장" in msg:
-            progress.progress(0.55, text=msg)
-        elif "이동시간" in msg:
-            if "완료" in msg:
-                progress.progress(0.5, text=msg)
-            elif "%" in msg:
-                try:
-                    pct = int(msg.split("(")[1].split("%")[0])
-                    progress.progress(0.1 + pct / 100 * 0.4, text=msg)
-                except (IndexError, ValueError):
-                    progress.progress(0.2, text=msg)
-            else:
-                progress.progress(0.15, text=msg)
-        else:
-            progress.progress(0.1, text=msg)
+        elapsed = int(time.time() - started)
+        status.caption(f"{msg} · {elapsed}초 경과")
+        progress.progress(min(0.98, _progress_fraction(msg)), text=msg)
 
     try:
-        progress.progress(0.05, text="입력 검증")
-        route = run_optimization(on_progress=on_progress)
+        progress.progress(0.02, text="입력 검증")
+        with st.status("경로를 계산하고 있습니다…", expanded=True) as run_status:
+            route = run_optimization(on_progress=on_progress)
+            run_status.update(label="계산 완료", state="complete", expanded=False)
         finalize_success(route)
         progress.progress(1.0, text="완료!")
         status.empty()

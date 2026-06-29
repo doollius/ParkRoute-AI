@@ -13,6 +13,7 @@ from constants.config import (
     PARKING_NEARBY_RADIUS_M,
     PARKING_SCORE_DIST_WEIGHT,
     PARKING_SCORE_FEE_WEIGHT,
+    PARKING_TMAP_CANDIDATE_LIMIT,
 )
 from utils.geo import haversine_m
 from utils.parking_cost import parse_fee
@@ -85,6 +86,14 @@ def get_parking_candidates(places: list[dict[str, Any]], region: str = "") -> li
 
     st.session_state.parking_candidates_cache = candidates
     return candidates
+
+
+def candidates_for_tmap_matching(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """TMAP 도보 정밀 검사 대상 — 중심에서 가까운 상위 N개만."""
+    if not candidates:
+        return []
+    ranked = sorted(candidates, key=lambda p: p.get("distance_m", 999_999))
+    return ranked[:PARKING_TMAP_CANDIDATE_LIMIT]
 
 
 def score_parking(

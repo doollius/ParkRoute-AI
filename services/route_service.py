@@ -10,7 +10,6 @@ from optimizer.parking_graph import build_cluster_aware_cost_matrix, build_clust
 from optimizer.ortools_solver import solve_route_order
 from optimizer.route_reconstruction import _split_order_into_legs, build_parking_aware_route
 from optimizer.scoring import build_route_summary
-from services.explanation_service import generate_explanation
 from services.map_service import apply_walk_limit, build_travel_matrix
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.time_utils import check_reservation_feasible, hhmm_to_minutes
@@ -206,7 +205,7 @@ def optimize_route(
     user_end_fixed = end_idx is not None
     congestion_level = congestion_level or "normal"
 
-    progress("이동시간 계산 중...")
+    progress("1/4 이동시간 계산 중…")
     travel_matrix = build_travel_matrix(nodes, on_progress=on_progress)
     estimated_legs = sum(
         1
@@ -219,9 +218,8 @@ def optimize_route(
             f"TMAP API 오류로 {estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다. (ER-009)"
         )
 
-    progress("주차장 탐색 중...")
     cluster_plan = build_cluster_plan(
-        nodes, travel_matrix, travel_region, congestion_level, mode
+        nodes, travel_matrix, travel_region, congestion_level, mode, on_progress=on_progress
     )
     cost_matrix = build_cluster_aware_cost_matrix(
         travel_matrix, cluster_plan, nodes, mode, congestion_level
@@ -238,7 +236,7 @@ def optimize_route(
 
     mapped_rules = map_rules_to_indices(visit_rules or [], id_to_index)
 
-    progress("OR-Tools 실행 중...")
+    progress("4/4 경로 최적화 (OR-Tools)…")
     order, resolved_start, resolved_end = _solve_order_flexible(
         cost_matrix,
         start_idx,
@@ -254,7 +252,7 @@ def optimize_route(
     if not order:
         relaxed_matrix = apply_walk_limit(travel_matrix, WALK_TIME_FALLBACK_MINUTES)
         relaxed_plan = build_cluster_plan(
-            nodes, relaxed_matrix, travel_region, congestion_level, mode
+            nodes, relaxed_matrix, travel_region, congestion_level, mode, on_progress=on_progress
         )
         relaxed_cost = build_cluster_aware_cost_matrix(
             relaxed_matrix, relaxed_plan, nodes, mode, congestion_level
@@ -345,7 +343,7 @@ def optimize_route(
             f"공영주차장 거점 경로가 직접 차량 이동보다 약 {hub_savings // 60}분 유리하여 주차 중심 동선을 적용했습니다."
         )
 
-    progress("경로 재구성 중...")
+    progress("4/4 경로 재구성 중…")
     stops, segments, parkings = build_parking_aware_route(
         order,
         nodes,
@@ -403,5 +401,4 @@ def optimize_route(
     }
     if warnings:
         route["message"] = "조건을 일부 완화하여 경로를 생성했습니다."
-    route["explanation"] = generate_explanation(route)
     return route

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from constants.config import (
     FORBIDDEN_EDGE_COST,
     PARKING_COUNT_MODE_PENALTY,
+    PARKING_HAVERSINE_PREFILTER_M,
     PARKING_NEARBY_RADIUS_M,
     PARKING_SCORE_FEE_WEIGHT,
     PARKING_TRANSITION_PENALTY,
@@ -14,7 +15,12 @@ from constants.config import (
 from optimizer.graph_builder import cluster_by_walk, edge_cost
 from optimizer.multimodal_cost import compare_cluster_routing, hub_loop_cost_seconds
 from services.map_service import get_travel_times
-from services.parking_service import get_parking_candidates, score_parking, select_parking_for_cluster
+from services.parking_service import (
+    candidates_for_tmap_matching,
+    get_parking_candidates,
+    score_parking,
+    select_parking_for_cluster,
+)
 from utils.geo import haversine_m
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.parking_cost import parse_fee
@@ -40,11 +46,14 @@ def _indices_near_parking(
     indices: list[int] = []
     plat, plng = parking["lat"], parking["lng"]
     for i, node in enumerate(nodes):
+        hdist = haversine_m(plat, plng, node["lat"], node["lng"])
         if parking_mode:
+            if hdist > PARKING_HAVERSINE_PREFILTER_M:
+                continue
             leg = get_travel_times(plat, plng, node["lat"], node["lng"])
             if walk_leg_ok_distance(leg, PARKING_WALK_MAX_DISTANCE_M):
                 indices.append(i)
-        elif haversine_m(plat, plng, node["lat"], node["lng"]) <= PARKING_NEARBY_RADIUS_M:
+        elif hdist <= PARKING_NEARBY_RADIUS_M:
             indices.append(i)
     return indices
 
@@ -52,13 +61,17 @@ def _indices_near_parking(
 def _build_parking_first_clusters(
     nodes: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
+    on_progress: Callable[[str], None] | None = None,
 ) -> tuple[list[list[int]], dict[int, dict[str, Any]], set[str]]:
     """
     주차 횟수 최소화: 공영주차장 기준 1km 이내 POI 2개 이상이면 클러스터.
     겹치면 가장 많은 POI를 포함하는 주차장을 우선 선택.
     """
     covers: list[tuple[float, int, dict[str, Any], list[int]]] = []
-    for parking in candidates:
+    total = len(candidates)
+    for idx, parking in enumerate(candidates):
+        if on_progress and total:
+            on_progress(f"3/4 주차장-장소 연결 확인 ({idx + 1}/{total})")
         indices = _indices_near_parking(parking, nodes, parking_mode=True)
         if len(indices) >= 2:
             center_lat = sum(nodes[i]["lat"] for i in indices) / len(indices)
@@ -102,12 +115,21 @@ def build_cluster_plan(
     travel_region: str,
     congestion_level: str = "normal",
     optimization_mode: str = "minimize_walk",
+    on_progress: Callable[[str], None] | None = None,
 ) -> ClusterPlan:
     mode = normalize_optimization_mode(optimization_mode)
+
+    if on_progress:
+        on_progress("2/4 주차장 목록 조회 (카카오)…")
     candidates = get_parking_candidates(nodes, travel_region)
+    tmap_candidates = candidates_for_tmap_matching(candidates)
+    if on_progress:
+        on_progress(f"2/4 주차장 {len(candidates)}곳 조회 완료")
 
     if mode == MODE_MINIMIZE_PARKING:
-        clusters, pre_parking, _used = _build_parking_first_clusters(nodes, candidates)
+        clusters, pre_parking, _used = _build_parking_first_clusters(
+            nodes, tmap_candidates, on_progress=on_progress
+        )
     else:
         clusters = cluster_by_walk(travel_matrix)
         pre_parking = {}

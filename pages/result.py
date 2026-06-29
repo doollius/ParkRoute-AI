@@ -6,6 +6,7 @@ from streamlit_folium import st_folium
 
 from models.route import RouteResult
 from optimizer.scoring import format_duration
+from services.explanation_service import generate_explanation
 from state.session_manager import go_to
 from utils.ui_helpers import bottom_action_row, bottom_button, is_confirm_pending, render_confirm_box, request_confirm
 
@@ -88,10 +89,15 @@ def render() -> None:
             if p.get("address"):
                 st.caption(p["address"])
 
-    if parsed.explanation:
+    explanation_key = tuple(route.get("order") or [])
+    if explanation_key:
         st.divider()
         st.subheader("AI 추천 이유")
-        st.info(parsed.explanation)
+        if st.session_state.get("_route_explanation_key") != explanation_key:
+            with st.spinner("추천 이유를 생성하는 중…"):
+                st.session_state._route_explanation = generate_explanation(route)
+                st.session_state._route_explanation_key = explanation_key
+        st.info(st.session_state.get("_route_explanation", ""))
 
     if is_confirm_pending("confirm_home"):
         action = render_confirm_box(
@@ -119,6 +125,8 @@ def render() -> None:
             st.session_state._route_computed = False
             st.session_state.pop("parking_candidates_cache", None)
             st.session_state.pop("tmap_route_cache", None)
+            st.session_state.pop("_route_explanation", None)
+            st.session_state.pop("_route_explanation_key", None)
             go_to("loading")
             st.rerun()
 
