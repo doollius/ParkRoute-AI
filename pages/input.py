@@ -123,26 +123,51 @@ def _render_trip_step() -> None:
     _render_trip_actions()
 
 
+CONGESTION_OPTIONS: list[tuple[str, str]] = [
+    ("smooth", "원활"),
+    ("normal", "보통"),
+    ("busy", "혼잡"),
+]
+
+
+def _render_choice_buttons(
+    session_key: str,
+    options: list[tuple[str, str]],
+    *,
+    key_prefix: str,
+) -> None:
+    """세션 값을 갱신하는 가로 버튼 그룹 (선택 항목은 primary)."""
+    current = st.session_state.get(session_key, options[0][0])
+    cols = st.columns(len(options))
+    for col, (value, label) in zip(cols, options):
+        with col:
+            if st.button(
+                label,
+                key=f"{key_prefix}_{value}",
+                use_container_width=True,
+                type="primary" if current == value else "secondary",
+            ):
+                if current != value:
+                    st.session_state[session_key] = value
+                    st.rerun()
+
+
 def _render_travel_section() -> None:
     st.subheader("최적화 모드")
     mode = normalize_optimization_mode(st.session_state.get("optimization_mode"))
     st.session_state.optimization_mode = mode
-    st.selectbox(
-        "최적화 모드",
-        options=MODE_OPTIONS,
-        format_func=mode_label,
-        key="optimization_mode",
-        label_visibility="collapsed",
+    _render_choice_buttons(
+        "optimization_mode",
+        [(m, mode_label(m)) for m in MODE_OPTIONS],
+        key_prefix="opt_mode",
     )
     st.caption(MODE_DESCRIPTIONS.get(st.session_state.optimization_mode, ""))
     st.subheader("예상 혼잡도")
     st.caption("주차·건물 접근에 소요되는 시간 보정에 사용됩니다.")
-    st.selectbox(
-        "예상 혼잡도",
-        options=["smooth", "normal", "busy"],
-        format_func=lambda x: {"smooth": "원활", "normal": "보통", "busy": "혼잡"}[x],
-        key="congestion_level",
-        label_visibility="collapsed",
+    _render_choice_buttons(
+        "congestion_level",
+        CONGESTION_OPTIONS,
+        key_prefix="congestion",
     )
 
 
