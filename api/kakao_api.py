@@ -66,6 +66,7 @@ def search_parking_near(
     *,
     radius_m: int,
     max_distance_m: int | None = None,
+    max_results: int | None = None,
 ) -> list[dict[str, Any]]:
     """
     카카오 Local API — category_group_code=PK6 (주차장).
@@ -74,9 +75,10 @@ def search_parking_near(
     if radius_m <= 0:
         return []
 
+    result_cap = max_results if max_results is not None else KAKAO_PARKING_MAX_RESULTS
     seen: set[str] = set()
     results: list[dict[str, Any]] = []
-    max_pages = max(1, (KAKAO_PARKING_MAX_RESULTS + KAKAO_PARKING_PAGE_SIZE - 1) // KAKAO_PARKING_PAGE_SIZE)
+    max_pages = max(1, (result_cap + KAKAO_PARKING_PAGE_SIZE - 1) // KAKAO_PARKING_PAGE_SIZE)
 
     for page in range(1, max_pages + 1):
         try:
@@ -119,8 +121,8 @@ def search_parking_near(
 
         if meta.get("is_end", True):
             break
-        if len(results) >= KAKAO_PARKING_MAX_RESULTS:
+        if len(results) >= result_cap:
             break
 
     results.sort(key=lambda p: p.get("distance_m", 0))
-    return results[:KAKAO_PARKING_MAX_RESULTS]
+    return results[:result_cap]

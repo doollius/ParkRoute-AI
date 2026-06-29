@@ -55,6 +55,7 @@ def render() -> None:
             st.session_state._route_computed = False
             st.session_state.route = None
             st.session_state.pop("parking_candidates_cache", None)
+            st.session_state.pop("parking_coverage_cache", None)
             st.session_state.pop("tmap_route_cache", None)
             go_to("loading")
             st.rerun()

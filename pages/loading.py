@@ -61,6 +61,7 @@ def render() -> None:
     progress = st.progress(0, text="준비 중…")
     status = st.empty()
     st.session_state.pop("parking_candidates_cache", None)
+    st.session_state.pop("parking_coverage_cache", None)
     st.session_state.pop("_route_explanation", None)
     st.session_state.pop("_route_explanation_key", None)
 

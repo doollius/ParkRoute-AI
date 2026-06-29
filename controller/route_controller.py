@@ -5,13 +5,12 @@ from typing import Any, Callable
 import streamlit as st
 
 from constants.config import (
-    KAKAO_PARKING_MAX_RESULTS,
     OPTIMIZATION_BASE_SEC,
-    PARKING_TMAP_CANDIDATE_LIMIT,
     TMAP_REQUEST_DELAY_SEC,
     TMAP_SEC_PER_MATRIX_PAIR,
     TMAP_SEC_PER_PARKING_LEG,
 )
+from services.parking_service import tmap_parking_validate_limit
 from services import place_service
 from services.route_service import RouteOptimizationError, optimize_route
 
@@ -21,12 +20,11 @@ def estimate_optimization_range(place_count: int) -> tuple[int, int]:
     n = max(2, place_count)
     pairs = n * (n - 1)
     matrix_sec = pairs * TMAP_SEC_PER_MATRIX_PAIR
-    parking_legs = (
-        min(PARKING_TMAP_CANDIDATE_LIMIT, KAKAO_PARKING_MAX_RESULTS) * n * TMAP_SEC_PER_PARKING_LEG
-    )
-    api_calls = pairs * 2 + min(PARKING_TMAP_CANDIDATE_LIMIT, KAKAO_PARKING_MAX_RESULTS) * n * 2
+    parking_legs = tmap_parking_validate_limit(n) * n * TMAP_SEC_PER_PARKING_LEG
+    api_calls = pairs * 2 + tmap_parking_validate_limit(n) * n
+    kakao_sec = n * 1  # POI별 카카오 1회
     throttle_sec = int(api_calls * TMAP_REQUEST_DELAY_SEC)
-    low = OPTIMIZATION_BASE_SEC + matrix_sec + parking_legs + throttle_sec
+    low = OPTIMIZATION_BASE_SEC + matrix_sec + parking_legs + throttle_sec + kakao_sec
     high = int(low * 1.75) + 15
     return max(60, low), max(90, high)
 

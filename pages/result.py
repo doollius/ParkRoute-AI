@@ -124,6 +124,7 @@ def render() -> None:
         if bottom_button(right, "재계산"):
             st.session_state._route_computed = False
             st.session_state.pop("parking_candidates_cache", None)
+            st.session_state.pop("parking_coverage_cache", None)
             st.session_state.pop("tmap_route_cache", None)
             st.session_state.pop("_route_explanation", None)
             st.session_state.pop("_route_explanation_key", None)
