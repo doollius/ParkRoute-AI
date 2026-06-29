@@ -13,7 +13,7 @@ MODE_LABELS: dict[str, str] = {
 MODE_DESCRIPTIONS: dict[str, str] = {
     MODE_MINIMIZE_WALK: "차량을 자주 이동하여 걷는 시간을 최소화합니다.",
     MODE_MINIMIZE_PARKING: (
-        "공영주차장을 적극 활용하여 한 번 주차한 뒤 여러 장소를 도보로 방문합니다."
+        "근처 주차장(공영·사설)을 거점으로 한 번 주차한 뒤 여러 장소를 도보로 방문합니다."
     ),
 }
 

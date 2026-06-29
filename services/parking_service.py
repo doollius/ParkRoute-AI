@@ -5,6 +5,7 @@ from typing import Any, Callable
 import streamlit as st
 
 from api.kakao_api import KakaoApiError, search_parking_near
+from api.tmap_api import search_pois
 from constants.config import (
     KAKAO_HUB_CANDIDATES_PER_GROUP,
     KAKAO_PARKING_MAX_DISTANCE_M,
@@ -17,6 +18,7 @@ from constants.config import (
     PARKING_SCORE_DIST_WEIGHT,
     PARKING_SCORE_FEE_WEIGHT,
     PARKING_TMAP_VALIDATE_LIMIT,
+    PARKING_WALK_MAX_DISTANCE_M,
 )
 from utils.geo import haversine_m
 from utils.parking_cost import parse_fee
@@ -35,18 +37,96 @@ def trip_centroid(places: list[dict[str, Any]]) -> tuple[float, float] | None:
     return lat, lng
 
 
-def fetch_kakao_parking_for_poi(lat: float, lng: float) -> list[dict[str, Any]]:
-    """POI 좌표 기준 카카오 PK6 — 반경 1km, 상위 20건."""
+def fetch_tmap_parking_for_poi(
+    lat: float,
+    lng: float,
+    place_hint: str = "",
+    *,
+    limit: int = KAKAO_PARKING_PER_POI_LIMIT,
+) -> list[dict[str, Any]]:
+    """카카오 실패 시 TMAP POI 키워드 검색으로 주차장 후보 보완."""
+    keywords: list[str] = []
+    if place_hint:
+        keywords.append(f"{place_hint} 주차장")
+    keywords.append("주차장")
+
+    seen: set[str] = set()
+    results: list[dict[str, Any]] = []
+    for keyword in keywords:
+        try:
+            pois = search_pois(keyword, count=10)
+        except Exception:
+            continue
+        for poi in pois:
+            name = (poi.get("name") or "").strip()
+            if not name or "주차" not in name and "주차장" not in name:
+                continue
+            pid = f"tmap_{poi.get('name', '')}_{poi['lat']:.5f}_{poi['lng']:.5f}"
+            if pid in seen:
+                continue
+            dist = int(haversine_m(lat, lng, poi["lat"], poi["lng"]))
+            if dist > KAKAO_PARKING_PER_POI_RADIUS_M:
+                continue
+            seen.add(pid)
+            is_public = "공영" in name
+            results.append(
+                {
+                    "id": pid,
+                    "name": name,
+                    "address": poi.get("normalized_address") or "",
+                    "type": "공영" if is_public else "주차장",
+                    "lat": poi["lat"],
+                    "lng": poi["lng"],
+                    "phone": "",
+                    "distance_m": dist,
+                    "category_name": poi.get("poi_category") or "주차장",
+                    "base_fee": None,
+                    "unit_fee": None,
+                    "base_time_minutes": 30,
+                    "unit_time_minutes": 10,
+                    "capacity": None,
+                    "source": "tmap",
+                }
+            )
+        if len(results) >= limit:
+            break
+
+    results.sort(key=lambda p: p.get("distance_m", 0))
+    return results[:limit]
+
+
+def fetch_parking_for_poi(
+    lat: float,
+    lng: float,
+    place_hint: str = "",
+) -> tuple[list[dict[str, Any]], str | None]:
+    """POI 좌표 기준 주차장 — 카카오 PK6 우선, 실패·0건이면 TMAP 보완."""
     try:
-        return search_parking_near(
+        parks = search_parking_near(
             lat,
             lng,
             radius_m=KAKAO_PARKING_PER_POI_RADIUS_M,
             max_distance_m=KAKAO_PARKING_PER_POI_RADIUS_M,
             max_results=KAKAO_PARKING_PER_POI_LIMIT,
         )
-    except KakaoApiError:
-        return []
+        if parks:
+            return parks, None
+    except KakaoApiError as exc:
+        fallback = fetch_tmap_parking_for_poi(lat, lng, place_hint)
+        if fallback:
+            return fallback, f"카카오 주차장 API 오류 — TMAP 후보 {len(fallback)}건 사용 ({exc})"
+        return [], str(exc)
+
+    fallback = fetch_tmap_parking_for_poi(lat, lng, place_hint)
+    if fallback:
+        return fallback, f"카카오 주차장 0건 — TMAP 후보 {len(fallback)}건 사용"
+    return [], None
+
+
+def fetch_kakao_parking_for_poi(lat: float, lng: float, place_hint: str = "") -> list[dict[str, Any]]:
+    """POI 좌표 기준 카카오 PK6 — 반경 1km, 상위 20건."""
+    parks, _ = fetch_parking_for_poi(lat, lng, place_hint)
+    return parks
 
 
 def fetch_kakao_parking(
@@ -77,12 +157,21 @@ def build_parking_coverage(
     """
     per_poi: list[list[dict[str, Any]]] = []
     by_id: dict[str, dict[str, Any]] = {}
+    search_notes: list[str] = []
     total = len(places)
 
     for poi_idx, place in enumerate(places):
         if on_progress and total:
             on_progress(f"2/4 POI별 주차장 검색 ({poi_idx + 1}/{total})…")
-        parks = fetch_kakao_parking_for_poi(place["lat"], place["lng"])
+        hint = (
+            place.get("type")
+            or place.get("normalized_address")
+            or place.get("raw_input")
+            or ""
+        )
+        parks, note = fetch_parking_for_poi(place["lat"], place["lng"], str(hint))
+        if note:
+            search_notes.append(note)
         per_poi.append(parks)
         for p in parks:
             pid = p["id"]
@@ -93,7 +182,7 @@ def build_parking_coverage(
                 by_id[pid]["parking"] = dict(p)
 
     union = [entry["parking"] for entry in by_id.values()]
-    return {"per_poi": per_poi, "by_id": by_id, "union": union}
+    return {"per_poi": per_poi, "by_id": by_id, "union": union, "search_notes": search_notes}
 
 
 def get_parking_coverage(
@@ -192,18 +281,16 @@ def pick_hub_for_cluster(
         if candidate["id"] in used_ids:
             continue
         if parking_mode:
-            ok = True
-            for idx in poi_indices:
-                leg = get_walk_leg(
+            ok = all(
+                haversine_m(
                     candidate["lat"],
                     candidate["lng"],
                     nodes[idx]["lat"],
                     nodes[idx]["lng"],
-                    walk_only=True,
                 )
-                if not walk_leg_ok_distance(leg):
-                    ok = False
-                    break
+                <= PARKING_WALK_MAX_DISTANCE_M
+                for idx in poi_indices
+            )
             if ok:
                 used_ids.add(candidate["id"])
                 return {**candidate, "place_ids": [nodes[i]["id"] for i in poi_indices]}

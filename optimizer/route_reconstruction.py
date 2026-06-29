@@ -35,6 +35,7 @@ def _split_order_into_legs(
     cluster_plan: ClusterPlan | None = None,
     *,
     parking_mode: bool = False,
+    nodes: list[dict[str, Any]] | None = None,
 ) -> list[list[int]]:
     """방문 순서를 이동 leg로 분할. 주차 거점 클러스터는 한 leg로 묶음."""
     if not order:
@@ -44,9 +45,19 @@ def _split_order_into_legs(
         prev, curr = order[i - 1], order[i]
         if _same_parking_cluster(prev, curr, cluster_plan):
             legs[-1].append(curr)
-        elif segment_mode_for_leg(
-            travel_matrix[prev][curr], parking_mode=parking_mode
-        ) == "walk":
+        elif (
+            not parking_mode
+            and nodes
+            and segment_mode_for_leg(
+                travel_matrix[prev][curr],
+                parking_mode=parking_mode,
+                from_lat=nodes[prev]["lat"],
+                from_lng=nodes[prev]["lng"],
+                to_lat=nodes[curr]["lat"],
+                to_lng=nodes[curr]["lng"],
+            )
+            == "walk"
+        ):
             legs[-1].append(curr)
         else:
             legs.append([curr])
@@ -164,7 +175,9 @@ def build_parking_aware_route(
     optimization_mode: str = "minimize_walk",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     parking_mode = normalize_optimization_mode(optimization_mode) == MODE_MINIMIZE_PARKING
-    legs = _split_order_into_legs(order, travel_matrix, cluster_plan, parking_mode=parking_mode)
+    legs = _split_order_into_legs(
+        order, travel_matrix, cluster_plan, parking_mode=parking_mode, nodes=nodes
+    )
     candidates = get_parking_candidates(nodes, travel_region)
     used_parking_ids: set[str] = set()
 
@@ -192,6 +205,10 @@ def build_parking_aware_route(
             parking_mode=parking_mode,
             prefer_walk=prefer_walk,
             force_mode=force_mode,
+            from_lat=from_s["lat"],
+            from_lng=from_s["lng"],
+            to_lat=to_s["lat"],
+            to_lng=to_s["lng"],
         )
         time_key = "walk_time_sec" if mode == "walk" else "car_time_sec"
         current_minutes += max(1, int(leg.get(time_key) or 0) // 60)
@@ -328,7 +345,13 @@ def build_parking_aware_route(
                     prev_stop["lat"], prev_stop["lng"], p_stop["lat"], p_stop["lng"]
                 )
                 ret_mode = segment_mode_for_leg(
-                    ret_leg, parking_mode=parking_mode, prefer_walk=True
+                    ret_leg,
+                    parking_mode=parking_mode,
+                    prefer_walk=True,
+                    from_lat=prev_stop["lat"],
+                    from_lng=prev_stop["lng"],
+                    to_lat=p_stop["lat"],
+                    to_lng=p_stop["lng"],
                 )
                 time_key = "walk_time_sec" if ret_mode == "walk" else "car_time_sec"
                 current_minutes += max(1, int(ret_leg.get(time_key) or 0) // 60)

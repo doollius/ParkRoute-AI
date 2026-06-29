@@ -21,7 +21,7 @@ def _generate_template(route: dict[str, Any]) -> str:
 
     if mode == MODE_MINIMIZE_PARKING:
         intro = (
-            "주차 횟수를 줄이기 위해 공영주차장을 거점으로 두고 "
+            "주차 횟수를 줄이기 위해 주차장을 거점으로 두고 "
             "여러 장소를 도보로 방문하는 동선을 구성했습니다."
         )
     else:
@@ -35,7 +35,7 @@ def _generate_template(route: dict[str, Any]) -> str:
     ]
     if parkings:
         names = ", ".join(p["name"] for p in parkings[:3])
-        lines.append(f"근처 공영주차장({names})을 기준으로 동선을 묶었습니다.")
+        lines.append(f"근처 주차장({names})을 기준으로 동선을 묶었습니다.")
     parking_cost = summary.get("parking_cost_won")
     if parking_cost:
         lines.append(f"예상 주차비는 약 {parking_cost:,}원입니다.")

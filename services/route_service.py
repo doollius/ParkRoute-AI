@@ -6,11 +6,12 @@ from constants.config import MAX_GRAPH_NODES, WALK_TIME_FALLBACK_MINUTES, WALK_T
 from models.visit_rule import RULE_IMMEDIATE
 from optimizer.constraint_builder import map_rules_to_indices
 from optimizer.fallback_solver import greedy_route_order
-from optimizer.parking_graph import build_cluster_aware_cost_matrix, build_cluster_plan
+from optimizer.parking_graph import ClusterPlan, build_cluster_aware_cost_matrix, build_cluster_plan
 from optimizer.ortools_solver import solve_route_order
 from optimizer.route_reconstruction import _split_order_into_legs, build_parking_aware_route
 from optimizer.scoring import build_route_summary
 from services.map_service import apply_walk_limit, build_travel_matrix
+from services.parking_service import get_parking_coverage
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.time_utils import check_reservation_feasible, hhmm_to_minutes
 
@@ -47,17 +48,31 @@ def _parking_warnings(
     order: list[int],
     travel_matrix: list[list[dict[str, Any]]],
     parkings: list[dict[str, Any]],
+    nodes: list[dict[str, Any]],
+    *,
+    parking_mode: bool = False,
+    cluster_plan: ClusterPlan | None = None,
 ) -> list[str]:
-    legs = _split_order_into_legs(order, travel_matrix)
+    if parkings:
+        return []
+    if parking_mode and cluster_plan:
+        expected = sum(1 for v in cluster_plan.cluster_use_parking.values() if v)
+        if expected:
+            return [
+                "주차 거점이 계산되었으나 경로에 반영하지 못했습니다. "
+                "방문 순서·도보 거리 조건을 확인해 주세요. (ER-008)"
+            ]
+    legs = _split_order_into_legs(
+        order,
+        travel_matrix,
+        cluster_plan,
+        parking_mode=parking_mode,
+        nodes=nodes,
+    )
     walk_legs = [leg for leg in legs if len(leg) >= 2]
     if not walk_legs:
         return []
-    if not parkings:
-        return ["근처 공영주차장을 찾지 못해 주차 없이 경로를 표시합니다. (ER-008)"]
-    if len(parkings) < len(walk_legs):
-        missing = len(walk_legs) - len(parkings)
-        return [f"도보 그룹 {missing}곳에서 주차장을 찾지 못했습니다. 해당 구간은 차량·도보로 연결합니다."]
-    return []
+    return ["근처 주차장을 찾지 못해 주차 없이 경로를 표시합니다. (ER-008)"]
 
 
 def _solve_order_flexible(
@@ -243,6 +258,10 @@ def optimize_route(
     cluster_plan = build_cluster_plan(
         nodes, travel_matrix, travel_region, congestion_level, mode, on_progress=on_progress
     )
+    coverage_notes = get_parking_coverage(nodes).get("search_notes") or []
+    for note in coverage_notes[:2]:
+        if note not in warnings:
+            warnings.append(note)
     cost_matrix = build_cluster_aware_cost_matrix(
         travel_matrix, cluster_plan, nodes, mode, congestion_level
     )
@@ -347,24 +366,13 @@ def optimize_route(
         start_name = nodes[start_idx].get("type") or nodes[start_idx].get("normalized_address") or "출발 지점"
         warnings.append(f"출발지를 지정하지 않아 **{start_name}** 에서 시작하는 경로를 선택했습니다.")
 
-    # 주차 거점 경로 안내
     hub_savings = sum(
         r.get("savings_sec", 0)
         for r in cluster_plan.cluster_routing.values()
         if r.get("use_parking")
     )
-    if mode == MODE_MINIMIZE_PARKING and cluster_plan.cluster_use_parking:
-        hub_count = sum(1 for v in cluster_plan.cluster_use_parking.values() if v)
-        if hub_count:
-            warnings.append(
-                f"주차 횟수 최소화 모드: 공영주차장 {hub_count}곳을 거점으로 "
-                "도보 방문 동선을 구성했습니다."
-            )
-    elif hub_savings > 0:
-        warnings.append(
-            f"공영주차장 거점 경로가 직접 차량 이동보다 약 {hub_savings // 60}분 유리하여 주차 중심 동선을 적용했습니다."
-        )
 
+    # 주차 거점 경로 안내 — 실제 경로에 주차장이 반영된 경우만
     progress("4/4 경로 재구성 중…")
     stops, segments, parkings = build_parking_aware_route(
         order,
@@ -381,7 +389,26 @@ def optimize_route(
         optimization_mode=mode,
     )
 
-    warnings.extend(_parking_warnings(order, travel_matrix, parkings))
+    if mode == MODE_MINIMIZE_PARKING and parkings:
+        warnings.append(
+            f"주차 횟수 최소화 모드: 주차장 {len(parkings)}곳을 거점으로 "
+            "도보 방문 동선을 구성했습니다."
+        )
+    elif hub_savings > 0 and parkings:
+        warnings.append(
+            f"주차장 거점 경로가 직접 차량 이동보다 약 {hub_savings // 60}분 유리하여 주차 중심 동선을 적용했습니다."
+        )
+
+    warnings.extend(
+        _parking_warnings(
+            order,
+            travel_matrix,
+            parkings,
+            nodes,
+            parking_mode=(mode == MODE_MINIMIZE_PARKING),
+            cluster_plan=cluster_plan,
+        )
+    )
 
     summary = build_route_summary(segments, parkings)
     route: dict[str, Any] = {

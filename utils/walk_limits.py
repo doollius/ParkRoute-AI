@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from constants.config import PARKING_WALK_MAX_DISTANCE_M
+from utils.geo import haversine_m
 
 
 def walk_distance_m(leg: dict[str, Any]) -> int | None:
@@ -15,10 +16,25 @@ def walk_distance_m(leg: dict[str, Any]) -> int | None:
 def walk_leg_ok_distance(
     leg: dict[str, Any],
     max_m: int = PARKING_WALK_MAX_DISTANCE_M,
+    *,
+    from_lat: float | None = None,
+    from_lng: float | None = None,
+    to_lat: float | None = None,
+    to_lng: float | None = None,
 ) -> bool:
-    """TMAP 도보 경로 거리가 max_m 이하인지 (주차 횟수 최소화 모드)."""
+    """TMAP 도보 경로 거리가 max_m 이하인지. API 실패·미호출 시 직선거리로 판정."""
     dist = walk_distance_m(leg)
-    return dist is not None and dist <= max_m
+    if dist is not None and dist <= max_m:
+        return True
+    if (
+        from_lat is not None
+        and from_lng is not None
+        and to_lat is not None
+        and to_lng is not None
+        and (leg.get("walk_estimated") or dist is None)
+    ):
+        return int(haversine_m(from_lat, from_lng, to_lat, to_lng)) <= max_m
+    return False
 
 
 def walk_sec_for_leg(
@@ -45,10 +61,21 @@ def segment_mode_for_leg(
     parking_mode: bool = False,
     prefer_walk: bool = False,
     force_mode: str | None = None,
+    from_lat: float | None = None,
+    from_lng: float | None = None,
+    to_lat: float | None = None,
+    to_lng: float | None = None,
 ) -> str:
     if force_mode:
         return force_mode
-    if parking_mode and (prefer_walk or walk_leg_ok_distance(leg)):
+    walk_ok = walk_leg_ok_distance(
+        leg,
+        from_lat=from_lat,
+        from_lng=from_lng,
+        to_lat=to_lat,
+        to_lng=to_lng,
+    )
+    if parking_mode and (prefer_walk or walk_ok):
         if leg.get("walk_time_sec") is not None:
             return "walk"
     if prefer_walk and leg.get("walk_allowed"):
