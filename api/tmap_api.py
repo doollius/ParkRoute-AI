@@ -12,7 +12,7 @@ from constants.config import (
     TMAP_ROUTE_RETRY_BASE_SEC,
 )
 from utils.env_loader import get_env
-from utils.geo import is_trivial_route, prepare_route_coords, zero_route_metrics
+from utils.geo import estimate_travel_sec, is_trivial_route, prepare_route_coords, zero_route_metrics
 from utils.poi_category import normalize_biz_name
 
 logger = logging.getLogger(__name__)
@@ -124,10 +124,14 @@ def _post_route(
         )
 
         if resp.status_code == 429:
-            wait = TMAP_ROUTE_RETRY_BASE_SEC * (2**attempt)
+            retry_after = resp.headers.get("Retry-After")
+            try:
+                wait = float(retry_after) if retry_after else TMAP_ROUTE_RETRY_BASE_SEC * (2**attempt)
+            except (TypeError, ValueError):
+                wait = TMAP_ROUTE_RETRY_BASE_SEC * (2**attempt)
             logger.warning("TMAP %s route HTTP 429 — %.1fs 후 재시도 (%d/%d)", mode, wait, attempt + 1, TMAP_ROUTE_MAX_RETRIES)
             time.sleep(wait)
-            last_error = TmapApiError(f"{mode} 경로 실패 (HTTP 429)")
+            last_error = TmapApiError(f"{mode} 경로 실패 (HTTP 429 — 호출 한도 초과)")
             continue
 
         if resp.status_code >= 500:
@@ -342,6 +346,106 @@ def search_poi(keyword: str, count: int = 1) -> dict[str, Any]:
         "lng": first["lng"],
         "normalized_address": first["normalized_address"],
     }
+
+
+def get_car_route_matrix(coords: list[tuple[float, float]]) -> list[list[dict[str, int]]]:
+    """N개 좌표 간 차량 이동시간·거리를 Matrix API 1회로 조회 (Route API N² 호출 대체)."""
+    n = len(coords)
+    if n == 0:
+        return []
+    if n == 1:
+        return [[zero_route_metrics()]]
+
+    origins: list[dict[str, str]] = []
+    for lat, lng in coords:
+        s_lat, s_lng, _, _, invalid = prepare_route_coords(lat, lng, lat, lng)
+        if invalid:
+            raise TmapApiError(invalid)
+        origins.append({"lon": str(s_lng), "lat": str(s_lat)})
+
+    body = {"origins": origins, "destinations": origins}
+    _throttle_route_request()
+    last_error: TmapApiError | None = None
+
+    for attempt in range(TMAP_ROUTE_MAX_RETRIES):
+        resp = requests.post(
+            "https://apis.openapi.sk.com/tmap/matrix",
+            headers=_headers(),
+            json=body,
+            timeout=60,
+        )
+
+        if resp.status_code == 429:
+            retry_after = resp.headers.get("Retry-After")
+            try:
+                wait = float(retry_after) if retry_after else TMAP_ROUTE_RETRY_BASE_SEC * (2**attempt)
+            except (TypeError, ValueError):
+                wait = TMAP_ROUTE_RETRY_BASE_SEC * (2**attempt)
+            logger.warning("TMAP matrix HTTP 429 — %.1fs 후 재시도 (%d/%d)", wait, attempt + 1, TMAP_ROUTE_MAX_RETRIES)
+            time.sleep(wait)
+            last_error = TmapApiError("차량 경로 매트릭스 실패 (HTTP 429 — 호출 한도 초과)")
+            continue
+
+        if resp.status_code != 200:
+            detail = resp.text[:300] if resp.text else ""
+            raise TmapApiError(f"차량 경로 매트릭스 실패 (HTTP {resp.status_code}): {detail}")
+
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise TmapApiError("차량 경로 매트릭스 응답 파싱 실패") from exc
+
+        meta = data.get("meta") or {}
+        meta_status = (meta.get("status") or "").strip()
+        if meta_status and meta_status.lower() not in ("ok", "zeroresults"):
+            raise TmapApiError(
+                f"차량 경로 매트릭스 오류 ({meta_status}): {meta.get('message') or meta}"
+            )
+
+        matrix: list[list[dict[str, int | bool]]] = [
+            [zero_route_metrics() | {"estimated": False} for _ in range(n)]
+            for _ in range(n)
+        ]
+        for i in range(n):
+            matrix[i][i] = zero_route_metrics() | {"estimated": False}
+
+        filled: set[tuple[int, int]] = set()
+        for route in data.get("matrixRoutes") or []:
+            oi = int(route.get("originIndex", -1))
+            di = int(route.get("destinationIndex", -1))
+            if oi < 0 or di < 0 or oi >= n or di >= n:
+                continue
+            if oi == di:
+                matrix[oi][di] = zero_route_metrics() | {"estimated": False}
+                filled.add((oi, di))
+                continue
+            status = (route.get("status") or "").strip()
+            if status.lower() == "ok":
+                matrix[oi][di] = {
+                    "time_sec": int(route.get("duration") or 0),
+                    "distance_m": int(float(route.get("distance") or 0)),
+                    "estimated": False,
+                }
+            else:
+                a_lat, a_lng = coords[oi]
+                b_lat, b_lng = coords[di]
+                matrix[oi][di] = estimate_travel_sec(a_lat, a_lng, b_lat, b_lng, "car") | {
+                    "estimated": True,
+                }
+            filled.add((oi, di))
+
+        for i in range(n):
+            for j in range(n):
+                if i != j and (i, j) not in filled:
+                    a_lat, a_lng = coords[i]
+                    b_lat, b_lng = coords[j]
+                    matrix[i][j] = estimate_travel_sec(a_lat, a_lng, b_lat, b_lng, "car") | {
+                        "estimated": True,
+                    }
+
+        return matrix  # type: ignore[return-value]
+
+    raise last_error or TmapApiError("차량 경로 매트릭스 실패 (재시도 초과)")
 
 
 def get_car_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float) -> dict[str, int]:

@@ -220,8 +220,20 @@ def optimize_route(
         if leg.get("walk_estimated") and int(leg.get("walk_time_sec") or 0) > 0
     )
     if car_estimated_legs:
+        sample_err = next(
+            (
+                leg.get("walk_error")
+                for row in travel_matrix
+                for leg in row
+                if leg.get("car_estimated") and leg.get("walk_error")
+            ),
+            None,
+        )
+        hint = ""
+        if sample_err and "429" in sample_err:
+            hint = " TMAP 호출 한도(429)에 걸린 경우 잠시 후 다시 시도해 주세요."
         warnings.append(
-            f"TMAP 차량 경로 API 오류로 {car_estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다. (ER-009)"
+            f"TMAP 차량 경로 API 오류로 {car_estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다. (ER-009){hint}"
         )
     elif walk_estimated_legs:
         warnings.append(
