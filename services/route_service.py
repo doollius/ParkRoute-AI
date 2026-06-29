@@ -207,15 +207,25 @@ def optimize_route(
 
     progress("1/4 이동시간 계산 중…")
     travel_matrix = build_travel_matrix(nodes, on_progress=on_progress)
-    estimated_legs = sum(
+    car_estimated_legs = sum(
         1
         for row in travel_matrix
         for leg in row
-        if leg.get("estimated") and int(leg.get("car_time_sec") or 0) > 0
+        if leg.get("car_estimated") and int(leg.get("car_time_sec") or 0) > 0
     )
-    if estimated_legs:
+    walk_estimated_legs = sum(
+        1
+        for row in travel_matrix
+        for leg in row
+        if leg.get("walk_estimated") and int(leg.get("walk_time_sec") or 0) > 0
+    )
+    if car_estimated_legs:
         warnings.append(
-            f"TMAP API 오류로 {estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다. (ER-009)"
+            f"TMAP 차량 경로 API 오류로 {car_estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다. (ER-009)"
+        )
+    elif walk_estimated_legs:
+        warnings.append(
+            f"TMAP 도보 경로 API 오류로 {walk_estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다."
         )
 
     cluster_plan = build_cluster_plan(

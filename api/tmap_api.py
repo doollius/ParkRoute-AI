@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 import requests
 
-from constants.config import TMAP_REQUEST_DELAY_SEC
+from constants.config import (
+    TMAP_REQUEST_DELAY_SEC,
+    TMAP_ROUTE_MAX_RETRIES,
+    TMAP_ROUTE_RETRY_BASE_SEC,
+)
 from utils.env_loader import get_env
+from utils.geo import is_trivial_route, prepare_route_coords, zero_route_metrics
 from utils.poi_category import normalize_biz_name
+
+logger = logging.getLogger(__name__)
 
 
 class TmapApiError(Exception):
@@ -41,6 +49,7 @@ def _headers() -> dict[str, str]:
 
 
 def _extract_route_metrics(data: dict[str, Any]) -> dict[str, int]:
+    _raise_if_tmap_error_payload(data)
     for feature in data.get("features", []):
         props = feature.get("properties", {})
         if props.get("totalTime") is not None:
@@ -48,7 +57,155 @@ def _extract_route_metrics(data: dict[str, Any]) -> dict[str, int]:
                 "time_sec": int(props["totalTime"]),
                 "distance_m": int(props.get("totalDistance") or 0),
             }
-    raise TmapApiError("경로 정보를 찾을 수 없습니다.")
+    raise TmapApiError(_format_tmap_error_message(data, "경로 정보를 찾을 수 없습니다."))
+
+
+def _raise_if_tmap_error_payload(data: dict[str, Any]) -> None:
+    err = data.get("error")
+    if isinstance(err, dict):
+        code = err.get("code") or err.get("id") or ""
+        msg = err.get("message") or err.get("detail") or str(err)
+        raise TmapApiError(f"TMAP 오류 ({code}): {msg}".strip())
+    error_code = data.get("errorCode") or data.get("errorId")
+    error_msg = data.get("errorMessage") or data.get("errorMsg")
+    if error_code or error_msg:
+        raise TmapApiError(f"TMAP 오류 ({error_code or 'unknown'}): {error_msg or error_code}")
+
+
+def _format_tmap_error_message(data: dict[str, Any], fallback: str) -> str:
+    try:
+        _raise_if_tmap_error_payload(data)
+    except TmapApiError as exc:
+        return str(exc)
+    return fallback
+
+
+def _log_route_request(
+    mode: str,
+    start_lat: float,
+    start_lng: float,
+    end_lat: float,
+    end_lng: float,
+    body: dict[str, Any],
+) -> None:
+    if get_env("TMAP_DEBUG", "").lower() in ("1", "true", "yes"):
+        logger.warning(
+            "TMAP %s route request start=(%.6f,%.6f) end=(%.6f,%.6f) body=%s",
+            mode,
+            start_lat,
+            start_lng,
+            end_lat,
+            end_lng,
+            body,
+        )
+
+
+def _post_route(
+    url: str,
+    body: dict[str, Any],
+    *,
+    mode: str,
+    start_lat: float,
+    start_lng: float,
+    end_lat: float,
+    end_lng: float,
+) -> dict[str, int]:
+    _log_route_request(mode, start_lat, start_lng, end_lat, end_lng, body)
+    last_error: TmapApiError | None = None
+
+    for attempt in range(TMAP_ROUTE_MAX_RETRIES):
+        _throttle_route_request()
+        resp = requests.post(
+            url,
+            params={"version": "1", "format": "json"},
+            headers=_headers(),
+            json=body,
+            timeout=20,
+        )
+
+        if resp.status_code == 429:
+            wait = TMAP_ROUTE_RETRY_BASE_SEC * (2**attempt)
+            logger.warning("TMAP %s route HTTP 429 — %.1fs 후 재시도 (%d/%d)", mode, wait, attempt + 1, TMAP_ROUTE_MAX_RETRIES)
+            time.sleep(wait)
+            last_error = TmapApiError(f"{mode} 경로 실패 (HTTP 429)")
+            continue
+
+        if resp.status_code >= 500:
+            wait = TMAP_ROUTE_RETRY_BASE_SEC * (2**attempt)
+            logger.warning(
+                "TMAP %s route HTTP %s — %.1fs 후 재시도 (%d/%d)",
+                mode,
+                resp.status_code,
+                wait,
+                attempt + 1,
+                TMAP_ROUTE_MAX_RETRIES,
+            )
+            time.sleep(wait)
+            last_error = TmapApiError(f"{mode} 경로 실패 (HTTP {resp.status_code})")
+            continue
+
+        if resp.status_code != 200:
+            detail = resp.text[:300] if resp.text else ""
+            raise TmapApiError(f"{mode} 경로 실패 (HTTP {resp.status_code}): {detail}")
+
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise TmapApiError(f"{mode} 경로 응답 파싱 실패") from exc
+
+        if get_env("TMAP_DEBUG", "").lower() in ("1", "true", "yes"):
+            logger.warning("TMAP %s route response: %s", mode, str(data)[:500])
+
+        return _extract_route_metrics(data)
+
+    raise last_error or TmapApiError(f"{mode} 경로 실패 (재시도 초과)")
+
+
+def _route_body(start_lng: float, start_lat: float, end_lng: float, end_lat: float, *, pedestrian: bool) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "startX": start_lng,
+        "startY": start_lat,
+        "endX": end_lng,
+        "endY": end_lat,
+        "reqCoordType": "WGS84GEO",
+        "resCoordType": "WGS84GEO",
+        "searchOption": "0",
+    }
+    if pedestrian:
+        body["startName"] = "start"
+        body["endName"] = "end"
+    return body
+
+
+def _get_route(
+    start_lat: float,
+    start_lng: float,
+    end_lat: float,
+    end_lng: float,
+    *,
+    mode: str,
+    url: str,
+    pedestrian: bool,
+) -> dict[str, int]:
+    s_lat, s_lng, e_lat, e_lng, invalid_reason = prepare_route_coords(
+        start_lat, start_lng, end_lat, end_lng
+    )
+    if invalid_reason:
+        raise TmapApiError(invalid_reason)
+
+    if is_trivial_route(s_lat, s_lng, e_lat, e_lng):
+        return zero_route_metrics()
+
+    body = _route_body(s_lng, s_lat, e_lng, e_lat, pedestrian=pedestrian)
+    return _post_route(
+        url,
+        body,
+        mode=mode,
+        start_lat=s_lat,
+        start_lng=s_lng,
+        end_lat=e_lat,
+        end_lng=e_lng,
+    )
 
 
 def geocode_address(address: str) -> dict[str, Any]:
@@ -188,49 +345,27 @@ def search_poi(keyword: str, count: int = 1) -> dict[str, Any]:
 
 
 def get_car_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float) -> dict[str, int]:
-    _throttle_route_request()
-    resp = requests.post(
-        "https://apis.openapi.sk.com/tmap/routes",
-        params={"version": "1", "format": "json"},
-        headers=_headers(),
-        json={
-            "startX": start_lng,
-            "startY": start_lat,
-            "endX": end_lng,
-            "endY": end_lat,
-            "reqCoordType": "WGS84GEO",
-            "resCoordType": "WGS84GEO",
-            "searchOption": "0",
-        },
-        timeout=20,
+    return _get_route(
+        start_lat,
+        start_lng,
+        end_lat,
+        end_lng,
+        mode="car",
+        url="https://apis.openapi.sk.com/tmap/routes",
+        pedestrian=False,
     )
-    if resp.status_code != 200:
-        raise TmapApiError(f"차량 경로 실패 (HTTP {resp.status_code})")
-    return _extract_route_metrics(resp.json())
 
 
 def get_walk_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float) -> dict[str, int]:
-    _throttle_route_request()
-    resp = requests.post(
-        "https://apis.openapi.sk.com/tmap/routes/pedestrian",
-        params={"version": "1", "format": "json"},
-        headers=_headers(),
-        json={
-            "startX": start_lng,
-            "startY": start_lat,
-            "endX": end_lng,
-            "endY": end_lat,
-            "reqCoordType": "WGS84GEO",
-            "resCoordType": "WGS84GEO",
-            "searchOption": "0",
-            "startName": "start",
-            "endName": "end",
-        },
-        timeout=20,
+    return _get_route(
+        start_lat,
+        start_lng,
+        end_lat,
+        end_lng,
+        mode="walk",
+        url="https://apis.openapi.sk.com/tmap/routes/pedestrian",
+        pedestrian=True,
     )
-    if resp.status_code != 200:
-        raise TmapApiError(f"보행 경로 실패 (HTTP {resp.status_code})")
-    return _extract_route_metrics(resp.json())
 
 
 # Backward compatibility

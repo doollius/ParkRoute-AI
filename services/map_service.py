@@ -6,7 +6,7 @@ import streamlit as st
 
 from api.tmap_api import TmapApiError, get_car_route, get_walk_route
 from constants.config import WALK_TIME_LIMIT_MINUTES
-from utils.geo import coord_key, estimate_travel_sec
+from utils.geo import coord_key, estimate_travel_sec, is_trivial_route, zero_route_metrics
 
 WALK_LIMIT_SEC = WALK_TIME_LIMIT_MINUTES * 60
 
@@ -30,6 +30,8 @@ def _empty_leg() -> dict[str, Any]:
         "walk_allowed": True,
         "walk_error": None,
         "estimated": False,
+        "car_estimated": False,
+        "walk_estimated": False,
     }
 
 
@@ -39,6 +41,9 @@ def _fetch_walk_leg(
     to_lat: float,
     to_lng: float,
 ) -> tuple[dict[str, int], bool, str | None]:
+    if is_trivial_route(from_lat, from_lng, to_lat, to_lng):
+        return zero_route_metrics(), False, None
+
     walk_error: str | None = None
     estimated = False
     try:
@@ -56,6 +61,9 @@ def _fetch_car_leg(
     to_lat: float,
     to_lng: float,
 ) -> tuple[dict[str, int], bool, str | None]:
+    if is_trivial_route(from_lat, from_lng, to_lat, to_lng):
+        return zero_route_metrics(), False, None
+
     walk_error: str | None = None
     estimated = False
     try:
@@ -83,12 +91,13 @@ def get_travel_times(
         return cached
 
     walk_error: str | None = cached.get("walk_error") if cached else None
-    estimated = bool(cached and cached.get("estimated"))
+    car_estimated = bool(cached and cached.get("car_estimated"))
+    walk_estimated = bool(cached and cached.get("walk_estimated"))
 
     if walk_only:
         walk, walk_est, walk_err = _fetch_walk_leg(from_lat, from_lng, to_lat, to_lng)
         walk_error = walk_err or walk_error
-        estimated = estimated or walk_est
+        walk_estimated = walk_estimated or walk_est
         car = {
             "time_sec": int(cached.get("car_time_sec") or 0) if cached else 0,
             "distance_m": int(cached.get("car_distance_m") or 0) if cached else 0,
@@ -96,7 +105,8 @@ def get_travel_times(
     else:
         car, car_est, car_err = _fetch_car_leg(from_lat, from_lng, to_lat, to_lng)
         walk, walk_est, walk_err = _fetch_walk_leg(from_lat, from_lng, to_lat, to_lng)
-        estimated = car_est or walk_est
+        car_estimated = car_estimated or car_est
+        walk_estimated = walk_estimated or walk_est
         walk_error = car_err or walk_err or walk_error
 
     walk_sec = walk["time_sec"] if walk else None
@@ -109,7 +119,9 @@ def get_travel_times(
         "walk_distance_m": walk.get("distance_m") if walk else None,
         "walk_allowed": walk_allowed,
         "walk_error": walk_error,
-        "estimated": estimated,
+        "car_estimated": car_estimated,
+        "walk_estimated": walk_estimated,
+        "estimated": walk_estimated if walk_only else car_estimated,
     }
     cache[key] = result
     return result
@@ -144,6 +156,7 @@ def build_travel_matrix(
     n = len(nodes)
     matrix: list[list[dict[str, Any]]] = []
     estimated_count = 0
+    walk_estimated_count = 0
     total_pairs = max(1, n * (n - 1))
 
     for i in range(n):
@@ -154,8 +167,10 @@ def build_travel_matrix(
             else:
                 a, b = nodes[i], nodes[j]
                 leg = get_travel_times(a["lat"], a["lng"], b["lat"], b["lng"])
-                if leg.get("estimated"):
+                if leg.get("car_estimated") and int(leg.get("car_time_sec") or 0) > 0:
                     estimated_count += 1
+                if leg.get("walk_estimated") and int(leg.get("walk_time_sec") or 0) > 0:
+                    walk_estimated_count += 1
                 row.append(leg)
                 if on_progress and j != i:
                     done = i * n + j
@@ -164,5 +179,7 @@ def build_travel_matrix(
         matrix.append(row)
 
     if estimated_count and on_progress:
-        on_progress(f"1/4 이동시간 계산 완료 (일부 구간 추정 {estimated_count}건)")
+        on_progress(f"1/4 이동시간 계산 완료 (차량 구간 추정 {estimated_count}건)")
+    elif walk_estimated_count and on_progress:
+        on_progress(f"1/4 이동시간 계산 완료 (도보 구간 추정 {walk_estimated_count}건)")
     return matrix
