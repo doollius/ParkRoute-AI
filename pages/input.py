@@ -163,7 +163,7 @@ def _render_travel_section() -> None:
     )
     st.caption(MODE_DESCRIPTIONS.get(st.session_state.optimization_mode, ""))
     st.subheader("예상 혼잡도")
-    st.caption("주차·건물 접근에 소요되는 시간 보정에 사용됩니다.")
+    st.caption("주차 예상 시간 보정에 사용됩니다.")
     _render_choice_buttons(
         "congestion_level",
         CONGESTION_OPTIONS,

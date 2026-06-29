@@ -8,7 +8,7 @@ from services.map_service import get_travel_times
 from services.parking_service import get_parking_candidates, pick_parking_for_places
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.parking_cost import calculate_parking_cost
-from utils.parking_event import parking_event_minutes
+from utils.parking_event import parking_event_minutes, parking_lot_event_minutes
 from utils.time_utils import minutes_to_hhmm
 from utils.walk_limits import segment_mode_for_leg
 
@@ -199,10 +199,16 @@ def build_parking_aware_route(
         to_s["arrival_time"] = minutes_to_hhmm(current_minutes)
         stops.append(to_s)
 
-        if parking_event_node and to_s.get("kind") == "place":
-            evt_min = parking_event_minutes(parking_event_node, congestion_level)
-            current_minutes += evt_min
-            _append_parking_event(segments, to_s, evt_min)
+        # 주차 예상 시간: 차량 도착 시 — 목적지 직접 주차 또는 거점 주차장(P) 입차
+        if mode == "car":
+            evt_min = 0
+            if to_s.get("kind") == "place" and parking_event_node:
+                evt_min = parking_event_minutes(parking_event_node, congestion_level)
+            elif to_s.get("kind") == "parking":
+                evt_min = parking_lot_event_minutes(congestion_level)
+            if evt_min > 0:
+                current_minutes += evt_min
+                _append_parking_event(segments, to_s, evt_min)
 
         prev_stop = to_s
 
@@ -249,7 +255,7 @@ def build_parking_aware_route(
                 mark_end=mark_end,
                 visit_num=visit_num,
             )
-            add_travel(prev_stop, _node_stop(node, label), force_mode="car")
+            add_travel(prev_stop, _node_stop(node, label), force_mode="car", parking_event_node=node)
             continue
 
         use_hub = cluster_plan and cluster_uses_parking(cluster_plan, leg)
@@ -314,7 +320,6 @@ def build_parking_aware_route(
                     prev_stop,
                     place_stop,
                     prefer_walk=True,
-                    parking_event_node=node,
                 )
 
             # D → A → B → C → D : 주차장 복귀 (도보)
@@ -355,6 +360,6 @@ def build_parking_aware_route(
                     mark_end=mark_end,
                     visit_num=visit_num,
                 )
-                add_travel(prev_stop, _node_stop(node, label), force_mode="car")
+                add_travel(prev_stop, _node_stop(node, label), force_mode="car", parking_event_node=node)
 
     return stops, segments, parkings_meta

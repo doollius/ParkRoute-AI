@@ -53,7 +53,7 @@ def render() -> None:
     for seg in parsed.segments:
         if seg.mode == "parking_event":
             st.caption(
-                f"{seg.from_label}: 🅿️ 주차·접근 {format_duration(seg.time_sec)}"
+                f"{seg.from_label}: 🅿️ 주차 예상 시간 {format_duration(seg.time_sec)}"
             )
             continue
         mode_label = "🚗 차량" if seg.mode == "car" else "🚶 도보"
@@ -76,7 +76,7 @@ def render() -> None:
     st.metric("도보", format_duration(summary.get("walk_time_sec", 0)))
     parking_evt = summary.get("parking_event_time_sec", 0)
     if parking_evt:
-        st.metric("주차·접근", format_duration(parking_evt))
+        st.metric("주차 예상 시간", format_duration(parking_evt))
     st.caption(f"출발 시각: {route.get('trip_start_time', '09:00')}")
     if route.get("visit_rules_applied"):
         st.caption(f"적용된 방문 규칙: {route['visit_rules_applied']}건")

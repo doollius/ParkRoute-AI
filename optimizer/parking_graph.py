@@ -18,7 +18,6 @@ from services.parking_service import get_parking_candidates, score_parking, sele
 from utils.geo import haversine_m
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.parking_cost import parse_fee
-from utils.parking_event import parking_event_seconds
 from utils.walk_limits import walk_leg_ok_distance, walk_sec_for_leg
 
 
@@ -200,14 +199,6 @@ def _car_edge_cost(car_time_sec: int, minimize_walk: bool) -> int:
     return edge_cost(travel, minimize_walk)
 
 
-def _parking_event_cost_for_node(
-    node_idx: int,
-    nodes: list[dict[str, Any]],
-    congestion_level: str,
-) -> int:
-    return parking_event_seconds(nodes[node_idx], congestion_level)
-
-
 def _inter_cluster_car_sec(
     from_idx: int,
     to_idx: int,
@@ -267,21 +258,15 @@ def build_cluster_aware_cost_matrix(
                             max_walk_m=PARKING_WALK_MAX_DISTANCE_M,
                         )
                         if i != j:
-                            if walk is not None:
-                                cost = walk + _parking_event_cost_for_node(
-                                    j, nodes, congestion_level
-                                ) // max(1, len(cluster_plan.clusters[ci]) - 1)
-                            else:
-                                cost = FORBIDDEN_EDGE_COST
+                            matrix[i][j] = (
+                                walk if walk is not None else FORBIDDEN_EDGE_COST
+                            )
                         else:
-                            cost = 0
+                            matrix[i][j] = 0
                     else:
-                        cost = edge_cost(leg, minimize_walk)
-                        if i != j:
-                            cost += _parking_event_cost_for_node(
-                                j, nodes, congestion_level
-                            ) // max(1, len(cluster_plan.clusters[ci]) - 1)
-                    matrix[i][j] = cost
+                        matrix[i][j] = (
+                            edge_cost(leg, minimize_walk) if i != j else 0
+                        )
                 else:
                     matrix[i][j] = edge_cost(
                         travel_matrix[i][j],

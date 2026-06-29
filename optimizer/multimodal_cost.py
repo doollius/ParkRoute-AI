@@ -4,7 +4,7 @@ import itertools
 from typing import Any, Callable
 
 from constants.config import PARKING_SEARCH_PENALTY_SEC, PARKING_WALK_MAX_DISTANCE_M
-from utils.parking_event import parking_event_seconds
+from utils.parking_event import parking_lot_event_seconds
 from utils.walk_limits import walk_sec_for_leg
 
 
@@ -114,7 +114,6 @@ def hub_loop_cost_seconds(
     if walk is None:
         return None
     total += walk
-    total += parking_event_seconds(nodes[first], congestion_level)
 
     for a, b in zip(order, order[1:]):
         leg = travel_matrix[a][b]
@@ -122,7 +121,6 @@ def hub_loop_cost_seconds(
         if walk is None:
             return None
         total += walk
-        total += parking_event_seconds(nodes[b], congestion_level)
 
     last = order[-1]
     leg = get_leg(nodes[last]["lat"], nodes[last]["lng"], plat, plng)
@@ -131,6 +129,7 @@ def hub_loop_cost_seconds(
         return None
     total += walk
 
+    total += parking_lot_event_seconds(congestion_level)
     return total
 
 
