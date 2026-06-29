@@ -5,6 +5,7 @@ from typing import Any
 import requests
 
 from utils.env_loader import get_env
+from utils.poi_category import normalize_biz_name
 
 
 class TmapApiError(Exception):
@@ -102,10 +103,12 @@ def _parse_poi_row(poi: dict[str, Any], fallback_name: str = "") -> dict[str, An
         ).strip()
     normalized = road or name
 
+    middle_biz = normalize_biz_name(poi.get("middleBizName"))
+    lower_biz = normalize_biz_name(poi.get("lowerBizName"))
     category_parts = [
         poi.get("upperBizName") or "",
-        poi.get("middleBizName") or "",
-        poi.get("lowerBizName") or "",
+        middle_biz,
+        lower_biz,
         poi.get("bizName") or "",
         poi.get("className") or "",
     ]
@@ -117,6 +120,8 @@ def _parse_poi_row(poi: dict[str, Any], fallback_name: str = "") -> dict[str, An
         "lng": float(lon),
         "normalized_address": normalized,
         "poi_category": poi_category,
+        "middle_biz_name": middle_biz,
+        "lower_biz_name": lower_biz,
     }
 
 

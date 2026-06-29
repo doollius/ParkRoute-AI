@@ -28,6 +28,9 @@ def _clear_place_geocode(place: dict[str, Any]) -> None:
     place["geocode_status"] = "pending"
     place["poi_candidates"] = []
     place["matched_name"] = ""
+    place["poi_category"] = ""
+    place["middle_biz_name"] = ""
+    place["lower_biz_name"] = ""
     place.pop("_geocoded_for", None)
     place.pop("_geocode_note", None)
     place.pop("_manual_coords", None)
@@ -90,6 +93,8 @@ def _apply_confirmed_result(place: dict[str, Any], result: dict[str, Any]) -> No
     place["normalized_address"] = result["normalized_address"]
     place["matched_name"] = result.get("matched_name") or result["normalized_address"]
     place["poi_category"] = result.get("poi_category") or place.get("type", "")
+    place["middle_biz_name"] = result.get("middle_biz_name") or ""
+    place["lower_biz_name"] = result.get("lower_biz_name") or ""
     place["geocode_status"] = "confirmed"
     place["geocode_error"] = None
     place["poi_candidates"] = []
@@ -170,6 +175,8 @@ def select_poi_candidate(place_id: str, candidate_index: int) -> None:
             "normalized_address": picked["normalized_address"],
             "matched_name": picked["name"],
             "poi_category": picked.get("poi_category") or picked["name"],
+            "middle_biz_name": picked.get("middle_biz_name") or "",
+            "lower_biz_name": picked.get("lower_biz_name") or "",
         },
     )
 

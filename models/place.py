@@ -19,6 +19,8 @@ def create_place() -> dict[str, Any]:
         "poi_candidates": [],
         "matched_name": "",
         "poi_category": "",
+        "middle_biz_name": "",
+        "lower_biz_name": "",
     }
 
 
