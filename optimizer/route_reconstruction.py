@@ -33,6 +33,8 @@ def _split_order_into_legs(
     order: list[int],
     travel_matrix: list[list[dict[str, Any]]],
     cluster_plan: ClusterPlan | None = None,
+    *,
+    parking_mode: bool = False,
 ) -> list[list[int]]:
     """방문 순서를 이동 leg로 분할. 주차 거점 클러스터는 한 leg로 묶음."""
     if not order:
@@ -42,7 +44,9 @@ def _split_order_into_legs(
         prev, curr = order[i - 1], order[i]
         if _same_parking_cluster(prev, curr, cluster_plan):
             legs[-1].append(curr)
-        elif choose_segment_mode(travel_matrix[prev][curr]) == "walk":
+        elif segment_mode_for_leg(
+            travel_matrix[prev][curr], parking_mode=parking_mode
+        ) == "walk":
             legs[-1].append(curr)
         else:
             legs.append([curr])
@@ -160,7 +164,7 @@ def build_parking_aware_route(
     optimization_mode: str = "minimize_walk",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     parking_mode = normalize_optimization_mode(optimization_mode) == MODE_MINIMIZE_PARKING
-    legs = _split_order_into_legs(order, travel_matrix, cluster_plan)
+    legs = _split_order_into_legs(order, travel_matrix, cluster_plan, parking_mode=parking_mode)
     candidates = get_parking_candidates(nodes, travel_region)
     used_parking_ids: set[str] = set()
 
