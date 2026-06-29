@@ -358,6 +358,7 @@ def optimize_route(
         mark_start=user_start_fixed,
         mark_end=user_end_fixed,
         congestion_level=congestion_level,
+        optimization_mode=mode,
     )
 
     warnings.extend(_parking_warnings(order, travel_matrix, parkings))

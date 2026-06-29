@@ -3,13 +3,9 @@ from __future__ import annotations
 import itertools
 from typing import Any, Callable
 
+from constants.config import PARKING_SEARCH_PENALTY_SEC, PARKING_WALK_MAX_DISTANCE_M
 from utils.parking_event import parking_event_seconds
-
-
-def _walk_sec(leg: dict[str, Any]) -> int | None:
-    if leg.get("walk_allowed") and leg.get("walk_time_sec") is not None:
-        return int(leg["walk_time_sec"])
-    return None
+from utils.walk_limits import walk_sec_for_leg
 
 
 def _car_sec(leg: dict[str, Any]) -> int:
@@ -29,7 +25,6 @@ def min_car_path_cost(indices: list[int], travel_matrix: list[list[dict[str, Any
             best = min(best, cost)
         return int(best)
 
-    # Greedy nearest-neighbor (car)
     remaining = set(indices)
     start = indices[0]
     current = start
@@ -48,6 +43,8 @@ def _walk_order_from_parking(
     indices: list[int],
     nodes: list[dict[str, Any]],
     get_leg: Callable[..., dict[str, Any]],
+    *,
+    parking_mode: bool = False,
 ) -> list[int] | None:
     """주차장에서 출발하는 도보 방문 순서 (greedy)."""
     if not indices:
@@ -57,25 +54,25 @@ def _walk_order_from_parking(
     plat, plng = parking["lat"], parking["lng"]
     current = None
 
+    def leg_time(a_lat, a_lng, b_lat, b_lng) -> int:
+        leg = get_leg(a_lat, a_lng, b_lat, b_lng)
+        sec = walk_sec_for_leg(leg, parking_mode=parking_mode)
+        return sec if sec is not None else 999_999
+
     while remaining:
         if current is None:
             nxt = min(
                 remaining,
-                key=lambda i: int(
-                    get_leg(plat, plng, nodes[i]["lat"], nodes[i]["lng"]).get("walk_time_sec") or 999999
-                ),
+                key=lambda i: leg_time(plat, plng, nodes[i]["lat"], nodes[i]["lng"]),
             )
         else:
             nxt = min(
                 remaining,
-                key=lambda i: int(
-                    get_leg(
-                        nodes[current]["lat"],
-                        nodes[current]["lng"],
-                        nodes[i]["lat"],
-                        nodes[i]["lng"],
-                    ).get("walk_time_sec")
-                    or 999999
+                key=lambda i: leg_time(
+                    nodes[current]["lat"],
+                    nodes[current]["lng"],
+                    nodes[i]["lat"],
+                    nodes[i]["lng"],
                 ),
             )
         order.append(nxt)
@@ -91,15 +88,20 @@ def hub_loop_cost_seconds(
     travel_matrix: list[list[dict[str, Any]]],
     get_leg: Callable[..., dict[str, Any]],
     congestion_level: str,
+    *,
+    parking_mode: bool = False,
+    max_walk_m: int = PARKING_WALK_MAX_DISTANCE_M,
 ) -> int | None:
     """
-    D → A → B → C → D 형태 도보 루프 + 주차 이벤트 비용(초).
-    도보 불가 구간이 있으면 None.
+    P → A → B → C → P 도보 루프 + 주차 이벤트 비용(초).
+    parking_mode: TMAP 도보 거리 ≤ max_walk_m 인 구간만 허용 (9분 규칙 미사용).
     """
     if len(indices) < 2:
         return None
 
-    order = _walk_order_from_parking(parking, indices, nodes, get_leg)
+    order = _walk_order_from_parking(
+        parking, indices, nodes, get_leg, parking_mode=parking_mode
+    )
     if order is None:
         return None
 
@@ -108,7 +110,7 @@ def hub_loop_cost_seconds(
 
     first = order[0]
     leg = get_leg(plat, plng, nodes[first]["lat"], nodes[first]["lng"])
-    walk = _walk_sec(leg)
+    walk = walk_sec_for_leg(leg, parking_mode=parking_mode, max_walk_m=max_walk_m)
     if walk is None:
         return None
     total += walk
@@ -116,7 +118,7 @@ def hub_loop_cost_seconds(
 
     for a, b in zip(order, order[1:]):
         leg = travel_matrix[a][b]
-        walk = _walk_sec(leg)
+        walk = walk_sec_for_leg(leg, parking_mode=parking_mode, max_walk_m=max_walk_m)
         if walk is None:
             return None
         total += walk
@@ -124,7 +126,7 @@ def hub_loop_cost_seconds(
 
     last = order[-1]
     leg = get_leg(nodes[last]["lat"], nodes[last]["lng"], plat, plng)
-    walk = _walk_sec(leg)
+    walk = walk_sec_for_leg(leg, parking_mode=parking_mode, max_walk_m=max_walk_m)
     if walk is None:
         return None
     total += walk
@@ -141,8 +143,8 @@ def compare_cluster_routing(
     congestion_level: str = "normal",
 ) -> dict[str, Any]:
     """
-    주차 거점 vs 직접 차량 이동 비용 비교.
-    Returns: {use_parking, direct_cost_sec, hub_cost_sec, savings_sec}
+    주차 거점 vs 직접 차량 이동 비용 비교 (도보 이동시간 최소화 모드).
+    직행 경로에는 목적지마다 주차 탐색 부담을 가산.
     """
     if len(indices) < 2:
         return {
@@ -153,6 +155,8 @@ def compare_cluster_routing(
         }
 
     direct = min_car_path_cost(indices, travel_matrix)
+    direct += len(indices) * PARKING_SEARCH_PENALTY_SEC
+
     if not parking:
         return {
             "use_parking": False,
@@ -161,7 +165,9 @@ def compare_cluster_routing(
             "savings_sec": 0,
         }
 
-    hub = hub_loop_cost_seconds(indices, parking, nodes, travel_matrix, get_leg, congestion_level)
+    hub = hub_loop_cost_seconds(
+        indices, parking, nodes, travel_matrix, get_leg, congestion_level, parking_mode=False
+    )
     if hub is None:
         return {
             "use_parking": False,

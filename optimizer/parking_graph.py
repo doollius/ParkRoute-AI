@@ -4,10 +4,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from constants.config import (
+    FORBIDDEN_EDGE_COST,
     PARKING_COUNT_MODE_PENALTY,
     PARKING_NEARBY_RADIUS_M,
     PARKING_SCORE_FEE_WEIGHT,
     PARKING_TRANSITION_PENALTY,
+    PARKING_WALK_MAX_DISTANCE_M,
 )
 from optimizer.graph_builder import cluster_by_walk, edge_cost
 from optimizer.multimodal_cost import compare_cluster_routing, hub_loop_cost_seconds
@@ -17,6 +19,7 @@ from utils.geo import haversine_m
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.parking_cost import parse_fee
 from utils.parking_event import parking_event_seconds
+from utils.walk_limits import walk_leg_ok_distance, walk_sec_for_leg
 
 
 @dataclass
@@ -31,12 +34,18 @@ class ClusterPlan:
 def _indices_near_parking(
     parking: dict[str, Any],
     nodes: list[dict[str, Any]],
-    radius_m: int = PARKING_NEARBY_RADIUS_M,
+    *,
+    parking_mode: bool = False,
 ) -> list[int]:
+    """주차장 ↔ POI 근접 판정. parking_mode는 TMAP 도보 경로 거리 ≤ 1km."""
     indices: list[int] = []
     plat, plng = parking["lat"], parking["lng"]
     for i, node in enumerate(nodes):
-        if haversine_m(plat, plng, node["lat"], node["lng"]) <= radius_m:
+        if parking_mode:
+            leg = get_travel_times(plat, plng, node["lat"], node["lng"])
+            if walk_leg_ok_distance(leg, PARKING_WALK_MAX_DISTANCE_M):
+                indices.append(i)
+        elif haversine_m(plat, plng, node["lat"], node["lng"]) <= PARKING_NEARBY_RADIUS_M:
             indices.append(i)
     return indices
 
@@ -51,7 +60,7 @@ def _build_parking_first_clusters(
     """
     covers: list[tuple[float, int, dict[str, Any], list[int]]] = []
     for parking in candidates:
-        indices = _indices_near_parking(parking, nodes)
+        indices = _indices_near_parking(parking, nodes, parking_mode=True)
         if len(indices) >= 2:
             center_lat = sum(nodes[i]["lat"] for i in indices) / len(indices)
             center_lng = sum(nodes[i]["lng"] for i in indices) / len(indices)
@@ -132,20 +141,20 @@ def build_cluster_plan(
                 travel_matrix,
                 get_travel_times,
                 congestion_level,
+                parking_mode=True,
+                max_walk_m=PARKING_WALK_MAX_DISTANCE_M,
             )
+            # 정책: 2곳 이상 묶인 클러스터는 비용 비교 없이 공영주차장 거점 사용
+            cluster_parking[cluster_id] = parking
+            cluster_use_parking[cluster_id] = True
+            used_ids.add(parking["id"])
             cluster_routing[cluster_id] = {
-                "use_parking": hub is not None,
+                "use_parking": True,
                 "direct_cost_sec": None,
                 "hub_cost_sec": hub,
                 "savings_sec": 0,
                 "policy": "parking_first",
             }
-            if hub is not None:
-                cluster_parking[cluster_id] = parking
-                cluster_use_parking[cluster_id] = True
-                used_ids.add(parking["id"])
-            else:
-                cluster_use_parking[cluster_id] = False
             continue
 
         parking = select_parking_for_cluster(
@@ -252,17 +261,26 @@ def build_cluster_aware_cost_matrix(
                 if use_parking and len(cluster_plan.clusters[ci]) >= 2:
                     leg = travel_matrix[i][j]
                     if minimize_parking:
-                        walk = leg.get("walk_time_sec")
-                        if leg.get("walk_allowed") and walk is not None:
-                            cost = int(walk)
+                        walk = walk_sec_for_leg(
+                            leg,
+                            parking_mode=True,
+                            max_walk_m=PARKING_WALK_MAX_DISTANCE_M,
+                        )
+                        if i != j:
+                            if walk is not None:
+                                cost = walk + _parking_event_cost_for_node(
+                                    j, nodes, congestion_level
+                                ) // max(1, len(cluster_plan.clusters[ci]) - 1)
+                            else:
+                                cost = FORBIDDEN_EDGE_COST
                         else:
-                            cost = edge_cost(leg, minimize_walk=False)
+                            cost = 0
                     else:
                         cost = edge_cost(leg, minimize_walk)
-                    if i != j:
-                        cost += _parking_event_cost_for_node(j, nodes, congestion_level) // max(
-                            1, len(cluster_plan.clusters[ci]) - 1
-                        )
+                        if i != j:
+                            cost += _parking_event_cost_for_node(
+                                j, nodes, congestion_level
+                            ) // max(1, len(cluster_plan.clusters[ci]) - 1)
                     matrix[i][j] = cost
                 else:
                     matrix[i][j] = edge_cost(
