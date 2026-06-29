@@ -1,0 +1,1159 @@
+{
+  "source": "TMAP POI Search API (/tmap/pois)",
+  "keywords_queried": [
+    "스타벅스",
+    "맥도날드",
+    "경복궁",
+    "국립중앙박물관",
+    "롯데백화점",
+    "이마트",
+    "해운대해수욕장",
+    "부산역",
+    "CGV",
+    "올리브영",
+    "병원",
+    "약국",
+    "호텔",
+    "펜션",
+    "주유소",
+    "공영주차장",
+    "한강공원",
+    "카페",
+    "맛집",
+    "관광지",
+    "전통시장",
+    "놀이공원",
+    "대학교",
+    "교회",
+    "헬스장",
+    "미용실",
+    "은행",
+    "우체국",
+    "편의점",
+    "GS25",
+    "던킨도너츠",
+    "교보문고",
+    "노래방",
+    "찜질방",
+    "아울렛",
+    "벡스코",
+    "광안리",
+    "자갈치시장",
+    "태종대",
+    "감천문화마을"
+  ],
+  "category_fields_observed": [
+    "upperBizName",
+    "middleBizName",
+    "lowerBizName",
+    "bizName",
+    "className",
+    "upperClassName",
+    "middleClassName",
+    "lowerClassName",
+    "classCode",
+    "bizCode"
+  ],
+  "samples": [
+    {
+      "search_keyword": "스타벅스",
+      "name": "스타벅스 한국프레스센터점",
+      "upperBizName": "생활편의",
+      "middleBizName": "카페",
+      "lowerBizName": "커피전문점"
+    },
+    {
+      "search_keyword": "스타벅스",
+      "name": "스타벅스 무교로점",
+      "upperBizName": "생활편의",
+      "middleBizName": "카페",
+      "lowerBizName": "커피전문점"
+    },
+    {
+      "search_keyword": "맥도날드",
+      "name": "맥도날드 서울시청점",
+      "upperBizName": "생활편의",
+      "middleBizName": "음식점",
+      "lowerBizName": "패스트푸드"
+    },
+    {
+      "search_keyword": "맥도날드",
+      "name": "맥도날드 명동점",
+      "upperBizName": "생활편의",
+      "middleBizName": "음식점",
+      "lowerBizName": "패스트푸드"
+    },
+    {
+      "search_keyword": "맥도날드",
+      "name": "맥도날드 명동2호점",
+      "upperBizName": "생활편의",
+      "middleBizName": "음식점",
+      "lowerBizName": "패스트푸드"
+    },
+    {
+      "search_keyword": "경복궁",
+      "name": "경복궁",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "고궁"
+    },
+    {
+      "search_keyword": "경복궁",
+      "name": "경복궁 주차장",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주차장"
+    },
+    {
+      "search_keyword": "국립중앙박물관",
+      "name": "국립중앙박물관",
+      "upperBizName": "생활편의",
+      "middleBizName": "문화생활시설",
+      "lowerBizName": "박물관\\/기념관"
+    },
+    {
+      "search_keyword": "롯데백화점",
+      "name": "롯데백화점 본점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "대형유통점",
+      "lowerBizName": "백화점"
+    },
+    {
+      "search_keyword": "롯데백화점",
+      "name": "롯데백화점 에비뉴엘본점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "대형유통점",
+      "lowerBizName": "백화점"
+    },
+    {
+      "search_keyword": "이마트",
+      "name": "이마트 마포점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "슈퍼\\/마트",
+      "lowerBizName": "대형마트"
+    },
+    {
+      "search_keyword": "해운대해수욕장",
+      "name": "해운대해수욕장",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "해수욕장"
+    },
+    {
+      "search_keyword": "부산역",
+      "name": "부산역[부산지하철1호선]",
+      "upperBizName": "교통편의",
+      "middleBizName": "교통시설",
+      "lowerBizName": "지하철역"
+    },
+    {
+      "search_keyword": "부산역",
+      "name": "부산역",
+      "upperBizName": "교통편의",
+      "middleBizName": "교통시설",
+      "lowerBizName": "기차역"
+    },
+    {
+      "search_keyword": "부산역",
+      "name": "부산역선상A주차장",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주차장"
+    },
+    {
+      "search_keyword": "CGV",
+      "name": "CGV 명동",
+      "upperBizName": "생활편의",
+      "middleBizName": "문화생활시설",
+      "lowerBizName": "극장"
+    },
+    {
+      "search_keyword": "올리브영",
+      "name": "올리브영 무교동점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "생활용품",
+      "lowerBizName": "드럭스토어"
+    },
+    {
+      "search_keyword": "올리브영",
+      "name": "올리브영 덕수궁점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "생활용품",
+      "lowerBizName": "드럭스토어"
+    },
+    {
+      "search_keyword": "올리브영",
+      "name": "올리브영 시청역점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "생활용품",
+      "lowerBizName": "드럭스토어"
+    },
+    {
+      "search_keyword": "병원",
+      "name": "강북삼성병원 종합건진센터",
+      "upperBizName": "건물\\/시설",
+      "middleBizName": "구역내시설물",
+      "lowerBizName": "병원내시설물"
+    },
+    {
+      "search_keyword": "병원",
+      "name": "강북삼성병원",
+      "upperBizName": "의료편의",
+      "middleBizName": "의료시설",
+      "lowerBizName": "종합병원"
+    },
+    {
+      "search_keyword": "약국",
+      "name": "홍신약국",
+      "upperBizName": "의료편의",
+      "middleBizName": "기타의료시설",
+      "lowerBizName": "약국"
+    },
+    {
+      "search_keyword": "약국",
+      "name": "에이스약국",
+      "upperBizName": "의료편의",
+      "middleBizName": "기타의료시설",
+      "lowerBizName": "약국"
+    },
+    {
+      "search_keyword": "호텔",
+      "name": "더플라자호텔",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "숙박",
+      "lowerBizName": "호텔"
+    },
+    {
+      "search_keyword": "펜션",
+      "name": "보듬",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "숙박",
+      "lowerBizName": "펜션"
+    },
+    {
+      "search_keyword": "펜션",
+      "name": "유아이호스텔",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "숙박",
+      "lowerBizName": "펜션"
+    },
+    {
+      "search_keyword": "펜션",
+      "name": "UH 스위트 서울 인사동",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "숙박",
+      "lowerBizName": "펜션"
+    },
+    {
+      "search_keyword": "주유소",
+      "name": "SK 서남주유소",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주유소"
+    },
+    {
+      "search_keyword": "주유소",
+      "name": "GS 사직주유소",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주유소"
+    },
+    {
+      "search_keyword": "주유소",
+      "name": "HD현대오일뱅크 소월길주유소 (직영)",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주유소"
+    },
+    {
+      "search_keyword": "공영주차장",
+      "name": "서울특별시청 주차장",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주차장"
+    },
+    {
+      "search_keyword": "공영주차장",
+      "name": "코오롱빌딩옆노상공영주차장",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주차장"
+    },
+    {
+      "search_keyword": "공영주차장",
+      "name": "서울특별시청 서소문별관 주차장",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주차장"
+    },
+    {
+      "search_keyword": "한강공원",
+      "name": "여의도한강공원",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "공원"
+    },
+    {
+      "search_keyword": "카페",
+      "name": "조앤도슨 광화문점",
+      "upperBizName": "생활편의",
+      "middleBizName": "카페",
+      "lowerBizName": "카페기타"
+    },
+    {
+      "search_keyword": "카페",
+      "name": "커피루소 정동점",
+      "upperBizName": "생활편의",
+      "middleBizName": "카페",
+      "lowerBizName": "커피전문점"
+    },
+    {
+      "search_keyword": "카페",
+      "name": "마호가니 광화문케이스퀘어시티점",
+      "upperBizName": "생활편의",
+      "middleBizName": "카페",
+      "lowerBizName": "카페기타"
+    },
+    {
+      "search_keyword": "맛집",
+      "name": "진주회관",
+      "upperBizName": "생활편의",
+      "middleBizName": "음식점",
+      "lowerBizName": "한식"
+    },
+    {
+      "search_keyword": "맛집",
+      "name": "명동교자 본점",
+      "upperBizName": "생활편의",
+      "middleBizName": "음식점",
+      "lowerBizName": "한식"
+    },
+    {
+      "search_keyword": "맛집",
+      "name": "컨퍼런스하우스달개비[한식]",
+      "upperBizName": "생활편의",
+      "middleBizName": "음식점",
+      "lowerBizName": "한식"
+    },
+    {
+      "search_keyword": "관광지",
+      "name": "덕수궁",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "고궁"
+    },
+    {
+      "search_keyword": "관광지",
+      "name": "서울광장",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "광장"
+    },
+    {
+      "search_keyword": "관광지",
+      "name": "청계광장",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "광장"
+    },
+    {
+      "search_keyword": "전통시장",
+      "name": "자유상가",
+      "upperBizName": "쇼핑",
+      "middleBizName": "시장",
+      "lowerBizName": "재래시장"
+    },
+    {
+      "search_keyword": "전통시장",
+      "name": "을지지하쇼핑센터",
+      "upperBizName": "쇼핑",
+      "middleBizName": "시장",
+      "lowerBizName": "재래시장"
+    },
+    {
+      "search_keyword": "전통시장",
+      "name": "독립문영천시장",
+      "upperBizName": "쇼핑",
+      "middleBizName": "시장",
+      "lowerBizName": "재래시장"
+    },
+    {
+      "search_keyword": "놀이공원",
+      "name": "다이나믹메이즈 인사동점",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "레저\\/스포츠",
+      "lowerBizName": "테마파크"
+    },
+    {
+      "search_keyword": "대학교",
+      "name": "영진사이버대학교 서울학습관",
+      "upperBizName": "공공편의",
+      "middleBizName": "교육기관",
+      "lowerBizName": "대학교"
+    },
+    {
+      "search_keyword": "대학교",
+      "name": "정화예술대학교 명동캠퍼스 본관",
+      "upperBizName": "공공편의",
+      "middleBizName": "교육기관",
+      "lowerBizName": "대학교"
+    },
+    {
+      "search_keyword": "교회",
+      "name": "새문안교회",
+      "upperBizName": "생활편의",
+      "middleBizName": "종교",
+      "lowerBizName": "교회시설"
+    },
+    {
+      "search_keyword": "헬스장",
+      "name": "헬스보이짐 서울시청점",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "레저\\/스포츠",
+      "lowerBizName": "헬스"
+    },
+    {
+      "search_keyword": "헬스장",
+      "name": "버핏그라운드 광화문점",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "레저\\/스포츠",
+      "lowerBizName": "헬스"
+    },
+    {
+      "search_keyword": "미용실",
+      "name": "타임스케어",
+      "upperBizName": "생활편의",
+      "middleBizName": "미용서비스",
+      "lowerBizName": "미용실"
+    },
+    {
+      "search_keyword": "미용실",
+      "name": "정샘물인스피레이션 에비뉴엘점",
+      "upperBizName": "생활편의",
+      "middleBizName": "미용서비스",
+      "lowerBizName": "미용실"
+    },
+    {
+      "search_keyword": "은행",
+      "name": "하나은행 본점",
+      "upperBizName": "금융편의",
+      "middleBizName": "주요금융",
+      "lowerBizName": "은행"
+    },
+    {
+      "search_keyword": "은행",
+      "name": "한국은행 본점",
+      "upperBizName": "금융편의",
+      "middleBizName": "주요금융",
+      "lowerBizName": "은행"
+    },
+    {
+      "search_keyword": "우체국",
+      "name": "광화문우체국",
+      "upperBizName": "공공편의",
+      "middleBizName": "공공기관",
+      "lowerBizName": "우체국"
+    },
+    {
+      "search_keyword": "우체국",
+      "name": "서울소공동우체국",
+      "upperBizName": "공공편의",
+      "middleBizName": "공공기관",
+      "lowerBizName": "우체국"
+    },
+    {
+      "search_keyword": "우체국",
+      "name": "서울중앙우체국",
+      "upperBizName": "공공편의",
+      "middleBizName": "공공기관",
+      "lowerBizName": "우체국"
+    },
+    {
+      "search_keyword": "편의점",
+      "name": "CU 시청광장점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "대형유통점",
+      "lowerBizName": "편의점"
+    },
+    {
+      "search_keyword": "편의점",
+      "name": "GS25 무교YG타워점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "대형유통점",
+      "lowerBizName": "편의점"
+    },
+    {
+      "search_keyword": "편의점",
+      "name": "세븐일레븐 무교YG타워점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "대형유통점",
+      "lowerBizName": "편의점"
+    },
+    {
+      "search_keyword": "GS25",
+      "name": "GS25 중구광화문점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "대형유통점",
+      "lowerBizName": "편의점"
+    },
+    {
+      "search_keyword": "GS25",
+      "name": "GS25 덕수점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "대형유통점",
+      "lowerBizName": "편의점"
+    },
+    {
+      "search_keyword": "던킨도너츠",
+      "name": "던킨 북창점",
+      "upperBizName": "생활편의",
+      "middleBizName": "음식점",
+      "lowerBizName": "패스트푸드"
+    },
+    {
+      "search_keyword": "던킨도너츠",
+      "name": "던킨 부영태평빌딩점",
+      "upperBizName": "생활편의",
+      "middleBizName": "음식점",
+      "lowerBizName": "패스트푸드"
+    },
+    {
+      "search_keyword": "교보문고",
+      "name": "교보문고 광화문점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "문화용품",
+      "lowerBizName": "서점\\/책방"
+    },
+    {
+      "search_keyword": "노래방",
+      "name": "체스노래방",
+      "upperBizName": "생활편의",
+      "middleBizName": "생활서비스",
+      "lowerBizName": "노래방"
+    },
+    {
+      "search_keyword": "노래방",
+      "name": "필통노래방",
+      "upperBizName": "생활편의",
+      "middleBizName": "생활서비스",
+      "lowerBizName": "노래방"
+    },
+    {
+      "search_keyword": "노래방",
+      "name": "만남노래광장",
+      "upperBizName": "생활편의",
+      "middleBizName": "생활서비스",
+      "lowerBizName": "노래방"
+    },
+    {
+      "search_keyword": "찜질방",
+      "name": "뉴국제호텔사우나",
+      "upperBizName": "생활편의",
+      "middleBizName": "생활서비스",
+      "lowerBizName": "찜질방"
+    },
+    {
+      "search_keyword": "찜질방",
+      "name": "명동천지연불한증막",
+      "upperBizName": "생활편의",
+      "middleBizName": "생활서비스",
+      "lowerBizName": "찜질방"
+    },
+    {
+      "search_keyword": "찜질방",
+      "name": "국일관24시대중사우나",
+      "upperBizName": "생활편의",
+      "middleBizName": "생활서비스",
+      "lowerBizName": "찜질방"
+    },
+    {
+      "search_keyword": "아울렛",
+      "name": "롯데아울렛 서울역점",
+      "upperBizName": "쇼핑",
+      "middleBizName": "아울렛",
+      "lowerBizName": "롯데아울렛"
+    },
+    {
+      "search_keyword": "벡스코",
+      "name": "벡스코 제1전시장",
+      "upperBizName": "생활편의",
+      "middleBizName": "문화생활시설",
+      "lowerBizName": "전시장"
+    },
+    {
+      "search_keyword": "벡스코",
+      "name": "벡스코 제2전시장",
+      "upperBizName": "생활편의",
+      "middleBizName": "문화생활시설",
+      "lowerBizName": "전시장"
+    },
+    {
+      "search_keyword": "광안리",
+      "name": "광안리해수욕장",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "해수욕장"
+    },
+    {
+      "search_keyword": "광안리",
+      "name": "광안리공영주차장",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주차장"
+    },
+    {
+      "search_keyword": "광안리",
+      "name": "광안대교",
+      "upperBizName": "교통편의",
+      "middleBizName": "교통시설",
+      "lowerBizName": "대교\\/철교"
+    },
+    {
+      "search_keyword": "자갈치시장",
+      "name": "자갈치시장",
+      "upperBizName": "쇼핑",
+      "middleBizName": "시장",
+      "lowerBizName": "농수축산물시장"
+    },
+    {
+      "search_keyword": "자갈치시장",
+      "name": "자갈치시장 주차장",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주차장"
+    },
+    {
+      "search_keyword": "자갈치시장",
+      "name": "자갈치시장노상공영주차장",
+      "upperBizName": "교통편의",
+      "middleBizName": "자동차시설",
+      "lowerBizName": "주차장"
+    },
+    {
+      "search_keyword": "태종대",
+      "name": "태종대",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "문화유적지"
+    },
+    {
+      "search_keyword": "태종대",
+      "name": "태종대전망대",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "전망대"
+    },
+    {
+      "search_keyword": "감천문화마을",
+      "name": "감천문화마을",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "관광명소기타"
+    },
+    {
+      "search_keyword": "감천문화마을",
+      "name": "감천문화마을안내센터",
+      "upperBizName": "여행\\/레저",
+      "middleBizName": "관광명소",
+      "lowerBizName": "관광안내소"
+    }
+  ],
+  "summary": {
+    "total_pois": 86,
+    "unique_upperBizName": [
+      "건물\\/시설",
+      "공공편의",
+      "교통편의",
+      "금융편의",
+      "생활편의",
+      "쇼핑",
+      "여행\\/레저",
+      "의료편의"
+    ],
+    "unique_middleBizName": [
+      "공공기관",
+      "관광명소",
+      "교육기관",
+      "교통시설",
+      "구역내시설물",
+      "기타의료시설",
+      "대형유통점",
+      "레저\\/스포츠",
+      "문화생활시설",
+      "문화용품",
+      "미용서비스",
+      "생활서비스",
+      "생활용품",
+      "숙박",
+      "슈퍼\\/마트",
+      "시장",
+      "아울렛",
+      "음식점",
+      "의료시설",
+      "자동차시설",
+      "종교",
+      "주요금융",
+      "카페"
+    ],
+    "unique_lowerBizName": [
+      "고궁",
+      "공원",
+      "관광명소기타",
+      "관광안내소",
+      "광장",
+      "교회시설",
+      "극장",
+      "기차역",
+      "노래방",
+      "농수축산물시장",
+      "대교\\/철교",
+      "대학교",
+      "대형마트",
+      "드럭스토어",
+      "롯데아울렛",
+      "문화유적지",
+      "미용실",
+      "박물관\\/기념관",
+      "백화점",
+      "병원내시설물",
+      "서점\\/책방",
+      "약국",
+      "우체국",
+      "은행",
+      "재래시장",
+      "전망대",
+      "전시장",
+      "종합병원",
+      "주유소",
+      "주차장",
+      "지하철역",
+      "찜질방",
+      "카페기타",
+      "커피전문점",
+      "테마파크",
+      "패스트푸드",
+      "펜션",
+      "편의점",
+      "한식",
+      "해수욕장",
+      "헬스",
+      "호텔"
+    ],
+    "upperBizName_counts": {
+      "생활편의": 26,
+      "여행\\/레저": 18,
+      "쇼핑": 17,
+      "교통편의": 14,
+      "공공편의": 5,
+      "의료편의": 3,
+      "금융편의": 2,
+      "건물\\/시설": 1
+    },
+    "middleBizName_counts": {
+      "관광명소": 11,
+      "자동차시설": 11,
+      "음식점": 8,
+      "대형유통점": 7,
+      "생활서비스": 6,
+      "카페": 5,
+      "문화생활시설": 4,
+      "숙박": 4,
+      "시장": 4,
+      "교통시설": 3,
+      "생활용품": 3,
+      "레저\\/스포츠": 3,
+      "공공기관": 3,
+      "기타의료시설": 2,
+      "교육기관": 2,
+      "미용서비스": 2,
+      "주요금융": 2,
+      "슈퍼\\/마트": 1,
+      "구역내시설물": 1,
+      "의료시설": 1,
+      "종교": 1,
+      "문화용품": 1,
+      "아울렛": 1
+    },
+    "lowerBizName_counts": {
+      "주차장": 8,
+      "패스트푸드": 5,
+      "편의점": 5,
+      "커피전문점": 3,
+      "드럭스토어": 3,
+      "펜션": 3,
+      "주유소": 3,
+      "한식": 3,
+      "재래시장": 3,
+      "우체국": 3,
+      "노래방": 3,
+      "찜질방": 3,
+      "고궁": 2,
+      "백화점": 2,
+      "해수욕장": 2,
+      "약국": 2,
+      "카페기타": 2,
+      "광장": 2,
+      "대학교": 2,
+      "헬스": 2,
+      "미용실": 2,
+      "은행": 2,
+      "전시장": 2,
+      "박물관\\/기념관": 1,
+      "대형마트": 1,
+      "지하철역": 1,
+      "기차역": 1,
+      "극장": 1,
+      "병원내시설물": 1,
+      "종합병원": 1,
+      "호텔": 1,
+      "공원": 1,
+      "테마파크": 1,
+      "교회시설": 1,
+      "서점\\/책방": 1,
+      "롯데아울렛": 1,
+      "대교\\/철교": 1,
+      "농수축산물시장": 1,
+      "문화유적지": 1,
+      "전망대": 1,
+      "관광명소기타": 1,
+      "관광안내소": 1
+    },
+    "hierarchy_triples": [
+      {
+        "upper": "교통편의",
+        "middle": "자동차시설",
+        "lower": "주차장",
+        "count": 8
+      },
+      {
+        "upper": "생활편의",
+        "middle": "음식점",
+        "lower": "패스트푸드",
+        "count": 5
+      },
+      {
+        "upper": "쇼핑",
+        "middle": "대형유통점",
+        "lower": "편의점",
+        "count": 5
+      },
+      {
+        "upper": "생활편의",
+        "middle": "카페",
+        "lower": "커피전문점",
+        "count": 3
+      },
+      {
+        "upper": "쇼핑",
+        "middle": "생활용품",
+        "lower": "드럭스토어",
+        "count": 3
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "숙박",
+        "lower": "펜션",
+        "count": 3
+      },
+      {
+        "upper": "교통편의",
+        "middle": "자동차시설",
+        "lower": "주유소",
+        "count": 3
+      },
+      {
+        "upper": "생활편의",
+        "middle": "음식점",
+        "lower": "한식",
+        "count": 3
+      },
+      {
+        "upper": "쇼핑",
+        "middle": "시장",
+        "lower": "재래시장",
+        "count": 3
+      },
+      {
+        "upper": "공공편의",
+        "middle": "공공기관",
+        "lower": "우체국",
+        "count": 3
+      },
+      {
+        "upper": "생활편의",
+        "middle": "생활서비스",
+        "lower": "노래방",
+        "count": 3
+      },
+      {
+        "upper": "생활편의",
+        "middle": "생활서비스",
+        "lower": "찜질방",
+        "count": 3
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "관광명소",
+        "lower": "고궁",
+        "count": 2
+      },
+      {
+        "upper": "쇼핑",
+        "middle": "대형유통점",
+        "lower": "백화점",
+        "count": 2
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "관광명소",
+        "lower": "해수욕장",
+        "count": 2
+      },
+      {
+        "upper": "의료편의",
+        "middle": "기타의료시설",
+        "lower": "약국",
+        "count": 2
+      },
+      {
+        "upper": "생활편의",
+        "middle": "카페",
+        "lower": "카페기타",
+        "count": 2
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "관광명소",
+        "lower": "광장",
+        "count": 2
+      },
+      {
+        "upper": "공공편의",
+        "middle": "교육기관",
+        "lower": "대학교",
+        "count": 2
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "레저\\/스포츠",
+        "lower": "헬스",
+        "count": 2
+      },
+      {
+        "upper": "생활편의",
+        "middle": "미용서비스",
+        "lower": "미용실",
+        "count": 2
+      },
+      {
+        "upper": "금융편의",
+        "middle": "주요금융",
+        "lower": "은행",
+        "count": 2
+      },
+      {
+        "upper": "생활편의",
+        "middle": "문화생활시설",
+        "lower": "전시장",
+        "count": 2
+      },
+      {
+        "upper": "생활편의",
+        "middle": "문화생활시설",
+        "lower": "박물관\\/기념관",
+        "count": 1
+      },
+      {
+        "upper": "쇼핑",
+        "middle": "슈퍼\\/마트",
+        "lower": "대형마트",
+        "count": 1
+      },
+      {
+        "upper": "교통편의",
+        "middle": "교통시설",
+        "lower": "지하철역",
+        "count": 1
+      },
+      {
+        "upper": "교통편의",
+        "middle": "교통시설",
+        "lower": "기차역",
+        "count": 1
+      },
+      {
+        "upper": "생활편의",
+        "middle": "문화생활시설",
+        "lower": "극장",
+        "count": 1
+      },
+      {
+        "upper": "건물\\/시설",
+        "middle": "구역내시설물",
+        "lower": "병원내시설물",
+        "count": 1
+      },
+      {
+        "upper": "의료편의",
+        "middle": "의료시설",
+        "lower": "종합병원",
+        "count": 1
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "숙박",
+        "lower": "호텔",
+        "count": 1
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "관광명소",
+        "lower": "공원",
+        "count": 1
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "레저\\/스포츠",
+        "lower": "테마파크",
+        "count": 1
+      },
+      {
+        "upper": "생활편의",
+        "middle": "종교",
+        "lower": "교회시설",
+        "count": 1
+      },
+      {
+        "upper": "쇼핑",
+        "middle": "문화용품",
+        "lower": "서점\\/책방",
+        "count": 1
+      },
+      {
+        "upper": "쇼핑",
+        "middle": "아울렛",
+        "lower": "롯데아울렛",
+        "count": 1
+      },
+      {
+        "upper": "교통편의",
+        "middle": "교통시설",
+        "lower": "대교\\/철교",
+        "count": 1
+      },
+      {
+        "upper": "쇼핑",
+        "middle": "시장",
+        "lower": "농수축산물시장",
+        "count": 1
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "관광명소",
+        "lower": "문화유적지",
+        "count": 1
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "관광명소",
+        "lower": "전망대",
+        "count": 1
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "관광명소",
+        "lower": "관광명소기타",
+        "count": 1
+      },
+      {
+        "upper": "여행\\/레저",
+        "middle": "관광명소",
+        "lower": "관광안내소",
+        "count": 1
+      }
+    ]
+  },
+  "suggested_service_buckets": {
+    "기타(미분류)": [
+      "공공기관",
+      "교육기관",
+      "교통시설",
+      "기타의료시설",
+      "대형유통점",
+      "레저\\/스포츠",
+      "미용서비스",
+      "생활서비스",
+      "생활용품",
+      "의료시설",
+      "자동차시설",
+      "종교",
+      "주요금융",
+      "고궁",
+      "광장",
+      "교회시설",
+      "노래방",
+      "대교\\/철교",
+      "대학교",
+      "드럭스토어",
+      "미용실",
+      "병원내시설물",
+      "서점\\/책방",
+      "약국",
+      "우체국",
+      "은행",
+      "전망대",
+      "종합병원",
+      "주유소",
+      "주차장",
+      "찜질방",
+      "해수욕장",
+      "헬스"
+    ],
+    "관광지": [
+      "관광명소",
+      "구역내시설물",
+      "시장",
+      "관광명소기타",
+      "관광안내소",
+      "기차역",
+      "농수축산물시장",
+      "문화유적지",
+      "재래시장",
+      "전시장",
+      "지하철역"
+    ],
+    "문화시설": [
+      "문화생활시설",
+      "문화용품",
+      "극장",
+      "박물관\\/기념관"
+    ],
+    "숙박시설": [
+      "숙박",
+      "펜션",
+      "호텔"
+    ],
+    "쇼핑시설": [
+      "슈퍼\\/마트",
+      "아울렛",
+      "대형마트",
+      "롯데아울렛",
+      "백화점",
+      "편의점"
+    ],
+    "음식점": [
+      "음식점",
+      "패스트푸드",
+      "한식"
+    ],
+    "카페": [
+      "카페",
+      "카페기타",
+      "커피전문점"
+    ],
+    "공원": [
+      "공원",
+      "테마파크"
+    ]
+  }
+}
