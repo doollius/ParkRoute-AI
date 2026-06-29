@@ -12,13 +12,36 @@ from utils.parking_event import parking_event_minutes
 from utils.time_utils import minutes_to_hhmm
 
 
-def _split_order_into_legs(order: list[int], travel_matrix: list[list[dict[str, Any]]]) -> list[list[int]]:
+def _same_parking_cluster(
+    a: int,
+    b: int,
+    cluster_plan: ClusterPlan | None,
+) -> bool:
+    if cluster_plan is None:
+        return False
+    ca = cluster_plan.node_to_cluster.get(a)
+    cb = cluster_plan.node_to_cluster.get(b)
+    if ca is None or ca != cb:
+        return False
+    if len(cluster_plan.clusters[ca]) < 2:
+        return False
+    return cluster_plan.cluster_use_parking.get(ca, False)
+
+
+def _split_order_into_legs(
+    order: list[int],
+    travel_matrix: list[list[dict[str, Any]]],
+    cluster_plan: ClusterPlan | None = None,
+) -> list[list[int]]:
+    """방문 순서를 이동 leg로 분할. 주차 거점 클러스터는 한 leg로 묶음."""
     if not order:
         return []
     legs: list[list[int]] = [[order[0]]]
     for i in range(1, len(order)):
         prev, curr = order[i - 1], order[i]
-        if choose_segment_mode(travel_matrix[prev][curr]) == "walk":
+        if _same_parking_cluster(prev, curr, cluster_plan):
+            legs[-1].append(curr)
+        elif choose_segment_mode(travel_matrix[prev][curr]) == "walk":
             legs[-1].append(curr)
         else:
             legs.append([curr])
@@ -134,7 +157,7 @@ def build_parking_aware_route(
     mark_end: bool = True,
     congestion_level: str = "normal",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    legs = _split_order_into_legs(order, travel_matrix)
+    legs = _split_order_into_legs(order, travel_matrix, cluster_plan)
     candidates = get_parking_candidates(nodes, travel_region)
     used_parking_ids: set[str] = set()
 
@@ -152,11 +175,17 @@ def build_parking_aware_route(
         to_s: dict[str, Any],
         *,
         prefer_walk: bool = False,
+        force_mode: str | None = None,
         parking_event_node: dict[str, Any] | None = None,
     ) -> None:
         nonlocal current_minutes, prev_stop
         leg = get_travel_times(from_s["lat"], from_s["lng"], to_s["lat"], to_s["lng"])
-        mode = "walk" if prefer_walk and leg.get("walk_allowed") else choose_segment_mode(leg)
+        if force_mode:
+            mode = force_mode
+        elif prefer_walk and leg.get("walk_allowed"):
+            mode = "walk"
+        else:
+            mode = choose_segment_mode(leg)
         time_key = "walk_time_sec" if mode == "walk" else "car_time_sec"
         current_minutes += max(1, int(leg.get(time_key) or 0) // 60)
         _append_segment(segments, from_s, to_s, leg, mode)
@@ -213,7 +242,7 @@ def build_parking_aware_route(
                 mark_end=mark_end,
                 visit_num=visit_num,
             )
-            add_travel(prev_stop, _node_stop(node, label))
+            add_travel(prev_stop, _node_stop(node, label), force_mode="car")
             continue
 
         use_hub = cluster_plan and cluster_uses_parking(cluster_plan, leg)
@@ -250,7 +279,7 @@ def build_parking_aware_route(
                         continue
 
             if prev_stop and prev_stop.get("kind") != "parking":
-                add_travel(prev_stop, p_stop)
+                add_travel(prev_stop, p_stop, force_mode="car")
             elif prev_stop is None:
                 stops.append(p_stop)
                 prev_stop = p_stop
@@ -310,6 +339,6 @@ def build_parking_aware_route(
                     mark_end=mark_end,
                     visit_num=visit_num,
                 )
-                add_travel(prev_stop, _node_stop(node, label))
+                add_travel(prev_stop, _node_stop(node, label), force_mode="car")
 
     return stops, segments, parkings_meta

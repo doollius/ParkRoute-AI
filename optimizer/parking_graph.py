@@ -306,4 +306,6 @@ def cluster_uses_parking(cluster_plan: ClusterPlan, leg_indices: list[int]) -> b
     cluster_id = cluster_plan.node_to_cluster.get(leg_indices[0])
     if cluster_id is None:
         return False
+    if not all(cluster_plan.node_to_cluster.get(i) == cluster_id for i in leg_indices):
+        return False
     return cluster_plan.cluster_use_parking.get(cluster_id, False)
