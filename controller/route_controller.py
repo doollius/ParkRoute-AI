@@ -8,6 +8,7 @@ from constants.config import (
     KAKAO_PARKING_MAX_RESULTS,
     OPTIMIZATION_BASE_SEC,
     PARKING_TMAP_CANDIDATE_LIMIT,
+    TMAP_REQUEST_DELAY_SEC,
     TMAP_SEC_PER_MATRIX_PAIR,
     TMAP_SEC_PER_PARKING_LEG,
 )
@@ -23,7 +24,9 @@ def estimate_optimization_range(place_count: int) -> tuple[int, int]:
     parking_legs = (
         min(PARKING_TMAP_CANDIDATE_LIMIT, KAKAO_PARKING_MAX_RESULTS) * n * TMAP_SEC_PER_PARKING_LEG
     )
-    low = OPTIMIZATION_BASE_SEC + matrix_sec + parking_legs
+    api_calls = pairs * 2 + min(PARKING_TMAP_CANDIDATE_LIMIT, KAKAO_PARKING_MAX_RESULTS) * n * 2
+    throttle_sec = int(api_calls * TMAP_REQUEST_DELAY_SEC)
+    low = OPTIMIZATION_BASE_SEC + matrix_sec + parking_legs + throttle_sec
     high = int(low * 1.75) + 15
     return max(60, low), max(90, high)
 

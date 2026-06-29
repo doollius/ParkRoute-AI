@@ -1,15 +1,32 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import requests
 
+from constants.config import TMAP_REQUEST_DELAY_SEC
 from utils.env_loader import get_env
 from utils.poi_category import normalize_biz_name
 
 
 class TmapApiError(Exception):
     pass
+
+
+_last_route_request_at: float = 0.0
+
+
+def _throttle_route_request() -> None:
+    """경로 API 연속 호출 간 최소 간격 유지 (HTTP 429 완화)."""
+    global _last_route_request_at
+    if TMAP_REQUEST_DELAY_SEC <= 0:
+        return
+    now = time.monotonic()
+    wait = TMAP_REQUEST_DELAY_SEC - (now - _last_route_request_at)
+    if wait > 0:
+        time.sleep(wait)
+    _last_route_request_at = time.monotonic()
 
 
 def _headers() -> dict[str, str]:
@@ -171,6 +188,7 @@ def search_poi(keyword: str, count: int = 1) -> dict[str, Any]:
 
 
 def get_car_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float) -> dict[str, int]:
+    _throttle_route_request()
     resp = requests.post(
         "https://apis.openapi.sk.com/tmap/routes",
         params={"version": "1", "format": "json"},
@@ -192,6 +210,7 @@ def get_car_route(start_lng: float, start_lat: float, end_lng: float, end_lat: f
 
 
 def get_walk_route(start_lng: float, start_lat: float, end_lng: float, end_lat: float) -> dict[str, int]:
+    _throttle_route_request()
     resp = requests.post(
         "https://apis.openapi.sk.com/tmap/routes/pedestrian",
         params={"version": "1", "format": "json"},
