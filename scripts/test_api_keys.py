@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 TMAP_APP_KEY = os.getenv("TMAP_APP_KEY", "").strip()
-DATA_GO_KR_SERVICE_KEY = os.getenv("DATA_GO_KR_SERVICE_KEY", "").strip()
+KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 
@@ -47,7 +47,7 @@ def check_env() -> bool:
     all_ok = True
     for name, value in [
         ("TMAP_APP_KEY", TMAP_APP_KEY),
-        ("DATA_GO_KR_SERVICE_KEY", DATA_GO_KR_SERVICE_KEY),
+        ("KAKAO_REST_API_KEY", KAKAO_REST_API_KEY),
         ("OPENAI_API_KEY", OPENAI_API_KEY),
     ]:
         if value:
@@ -171,36 +171,35 @@ def test_tmap_walk_route() -> bool:
         return False
 
 
-def test_data_go_kr_parking() -> bool:
-    print("\n=== 5. 공공데이터포털 주차장 API ===")
-    url = "https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api"
-    # Try decoded key first; portal also provides URL-encoded variant
-    for label, key in [("decoded", DATA_GO_KR_SERVICE_KEY), ("encoded", DATA_GO_KR_SERVICE_KEY)]:
-        params = {
-            "serviceKey": key,
-            "pageNo": 1,
-            "numOfRows": 3,
-            "type": "json",
-            "prkplceSe": "공영",
-        }
-        try:
-            resp = requests.get(url, params=params, timeout=20)
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-            header = data.get("response", {}).get("header", {})
-            code = header.get("resultCode")
-            if code == "00":
-                items = data.get("response", {}).get("body", {}).get("items", [])
-                if isinstance(items, dict):
-                    items = [items]
-                name = items[0].get("prkplceNm", "?") if items else "(empty list)"
-                ok("Parking API", f"key={label}, sample={name}")
-                return True
-            fail("Parking API", f"key={label}, resultCode={code}, msg={header.get('resultMsg')}")
-        except Exception as exc:
-            fail("Parking API", f"key={label}, {exc}")
-    return False
+def test_kakao_parking() -> bool:
+    print("\n=== 5. Kakao Local API (PK6 주차장) ===")
+    url = "https://dapi.kakao.com/v2/local/search/category.json"
+    headers = {"Authorization": f"KakaoAK {KAKAO_REST_API_KEY}"}
+    params = {
+        "category_group_code": "PK6",
+        "x": 129.0532,
+        "y": 35.1629,
+        "radius": 1000,
+        "size": 5,
+    }
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=15)
+        if resp.status_code == 401:
+            fail("Kakao parking", "HTTP 401 — REST API 키 확인")
+            return False
+        if resp.status_code != 200:
+            fail("Kakao parking", f"HTTP {resp.status_code}: {resp.text[:120]}")
+            return False
+        docs = resp.json().get("documents", [])
+        if not docs:
+            fail("Kakao parking", "documents empty (키는 유효할 수 있음)")
+            return False
+        name = docs[0].get("place_name", "?")
+        ok("Kakao parking", f"{len(docs)}건, sample={name}")
+        return True
+    except Exception as exc:
+        fail("Kakao parking", str(exc))
+        return False
 
 
 def test_openai() -> bool:
@@ -234,7 +233,7 @@ def main() -> int:
         test_tmap_geocoding(),
         test_tmap_car_route(),
         test_tmap_walk_route(),
-        test_data_go_kr_parking(),
+        test_kakao_parking(),
         test_openai(),
     ]
 

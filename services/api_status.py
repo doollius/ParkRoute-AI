@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import quote
 
 import requests
 
+from api.kakao_api import KakaoApiError, search_parking_near
 from utils.env_loader import get_env
 
 SAMPLE_ADDRESS = "부산광역시 부산진구 중앙대로 749"
+# 부산진구청 근처 좌표 (Kakao PK6 테스트)
+SAMPLE_LAT = 35.1629
+SAMPLE_LNG = 129.0532
 
 _PLACEHOLDER_VALUES = frozenset(
     {
@@ -15,7 +18,7 @@ _PLACEHOLDER_VALUES = frozenset(
         "your_key",
         "your_tmap_key",
         "your_openai_key",
-        "your_service_key",
+        "your_kakao_key",
         "발급받은_키",
         "sk-...",
     }
@@ -44,7 +47,7 @@ def key_detail(env_name: str) -> dict[str, str | bool]:
 def keys_configured() -> dict[str, bool]:
     return {
         "TMAP": key_detail("TMAP_APP_KEY")["looks_ok"],
-        "DATA_GO_KR": key_detail("DATA_GO_KR_SERVICE_KEY")["looks_ok"],
+        "KAKAO": key_detail("KAKAO_REST_API_KEY")["looks_ok"],
         "OPENAI": key_detail("OPENAI_API_KEY")["looks_ok"],
     }
 
@@ -53,7 +56,7 @@ def keys_validation_message() -> str | None:
     issues: list[str] = []
     mapping = {
         "TMAP_APP_KEY": "TMAP",
-        "DATA_GO_KR_SERVICE_KEY": "DATA_GO_KR",
+        "KAKAO_REST_API_KEY": "KAKAO",
         "OPENAI_API_KEY": "OPENAI",
     }
     for env_name, label in mapping.items():
@@ -98,40 +101,20 @@ def test_tmap() -> tuple[bool, str]:
         return False, str(exc)
 
 
-def _parking_request(service_key: str) -> tuple[str, str]:
-    resp = requests.get(
-        "https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api",
-        params={
-            "serviceKey": service_key,
-            "pageNo": 1,
-            "numOfRows": 1,
-            "type": "json",
-            "prkplceSe": "공영",
-        },
-        timeout=15,
-    )
-    data = resp.json()
-    code = data.get("response", {}).get("header", {}).get("resultCode", "?")
-    msg = data.get("response", {}).get("header", {}).get("resultMsg", "")
-    return code, msg
-
-
 def test_parking() -> tuple[bool, str]:
-    detail = key_detail("DATA_GO_KR_SERVICE_KEY")
+    detail = key_detail("KAKAO_REST_API_KEY")
     if not detail["configured"]:
-        return False, "DATA_GO_KR_SERVICE_KEY 없음"
+        return False, "KAKAO_REST_API_KEY 없음"
     if detail["is_placeholder"]:
-        return False, "예시 키가 입력됨 — .env의 실제 serviceKey로 교체"
-    key = get_env("DATA_GO_KR_SERVICE_KEY")
+        return False, "예시 키가 입력됨 — .env의 실제 REST API 키로 교체"
     try:
-        for label, candidate in [
-            ("decoded", key),
-            ("encoded", quote(key, safe="")),
-        ]:
-            code, msg = _parking_request(candidate)
-            if code == "00":
-                return True, f"주차장 API OK ({label})"
-        return False, f"{code} {msg} (키={detail['masked']})"
+        results = search_parking_near(SAMPLE_LAT, SAMPLE_LNG, radius_m=1000)
+        if not results:
+            return False, "주차장 0건 (키는 유효할 수 있음 — 반경·좌표 확인)"
+        sample = results[0]
+        return True, f"카카오 PK6 OK ({len(results)}건, 예: {sample['name'][:20]})"
+    except KakaoApiError as exc:
+        return False, f"{exc} (키={detail['masked']})"
     except Exception as exc:
         return False, str(exc)
 

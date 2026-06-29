@@ -10,7 +10,7 @@ from state.session_manager import go_to
 
 _LIVE_TESTS: list[tuple[str, Callable[[], tuple[bool, str]]]] = [
     ("TMAP", api_status.test_tmap),
-    ("공공데이터 주차장", api_status.test_parking),
+    ("카카오 주차장", api_status.test_parking),
     ("OpenAI", api_status.test_openai),
 ]
 
@@ -58,7 +58,7 @@ def _run_live_api_check(progress_slot) -> None:
     total = len(_LIVE_TESTS)
 
     with progress_slot.status("⏳ 확인 중…", expanded=True) as status:
-        st.caption("TMAP · 공공데이터 · OpenAI 순서로 연결을 확인합니다.")
+        st.caption("TMAP · 카카오 · OpenAI 순서로 연결을 확인합니다.")
         progress_bar = st.progress(0.0, text="API 연결 확인 준비 중…")
         for i, (label, test_fn) in enumerate(_LIVE_TESTS):
             progress_bar.progress(
@@ -82,7 +82,7 @@ def _render_live_test_results() -> None:
         return
 
     st.divider()
-    st.caption("실시간 연결 테스트 (TMAP · 공공데이터 · OpenAI)")
+    st.caption("실시간 연결 테스트 (TMAP · 카카오 · OpenAI)")
     for label, ok, detail in st.session_state.get("api_check_results", []):
         icon = "✅" if ok else "❌"
         st.write(f"{icon} **{label}**: {detail}")
