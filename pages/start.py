@@ -8,14 +8,27 @@ from constants.config import APP_TAGLINE, APP_TITLE
 from services import api_status
 from state.session_manager import go_to
 
+_STALE_API_LABELS = frozenset({"공공데이터 주차장", "DATA_GO_KR", "카카오 주차장"})
+
 _LIVE_TESTS: list[tuple[str, Callable[[], tuple[bool, str]]]] = [
     ("TMAP", api_status.test_tmap),
-    ("카카오 주차장", api_status.test_parking),
+    ("카카오 API", api_status.test_parking),
     ("OpenAI", api_status.test_openai),
 ]
 
 
+def _invalidate_stale_api_check() -> None:
+    """이전 공공데이터·구 라벨로 저장된 연결 테스트 결과 제거."""
+    results = st.session_state.get("api_check_results", [])
+    if any(label in _STALE_API_LABELS for label, _, _ in results):
+        st.session_state.pop("api_check_results", None)
+        st.session_state.pop("api_check_all_passed", None)
+        st.session_state.pop("run_api_check", None)
+
+
 def render() -> None:
+    _invalidate_stale_api_check()
+
     st.title(APP_TITLE)
     st.markdown(
         f"""

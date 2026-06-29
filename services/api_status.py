@@ -104,7 +104,10 @@ def test_tmap() -> tuple[bool, str]:
 def test_parking() -> tuple[bool, str]:
     detail = key_detail("KAKAO_REST_API_KEY")
     if not detail["configured"]:
-        return False, "KAKAO_REST_API_KEY 없음"
+        return (
+            False,
+            "KAKAO_REST_API_KEY 없음 — 로컬: .env / Cloud: Streamlit Secrets에 추가",
+        )
     if detail["is_placeholder"]:
         return False, "예시 키가 입력됨 — .env의 실제 REST API 키로 교체"
     try:
@@ -112,7 +115,7 @@ def test_parking() -> tuple[bool, str]:
         if not results:
             return False, "주차장 0건 (키는 유효할 수 있음 — 반경·좌표 확인)"
         sample = results[0]
-        return True, f"카카오 PK6 OK ({len(results)}건, 예: {sample['name'][:20]})"
+        return True, f"카카오 Local API OK — PK6 {len(results)}건 (예: {sample['name'][:20]})"
     except KakaoApiError as exc:
         return False, f"{exc} (키={detail['masked']})"
     except Exception as exc:
