@@ -165,7 +165,7 @@ def _render_places_section() -> None:
                 placeholder="예: 경복궁, 현충원, SK아카데미, 부산역",
             )
             if manual:
-                st.caption("방문 순서 등에서 보여질 이름입니다. (예: 외할머니댁)")
+                st.caption("방문 순서 등에서 보여질 이름입니다. (예: 외할머니 댁)")
             else:
                 st.caption("지도에서 검색되는 공식 장소명·상호명을 입력하세요.")
 
