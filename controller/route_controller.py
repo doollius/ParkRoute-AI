@@ -63,7 +63,7 @@ def run_optimization(
         visit_rules=visit_rules,
 
         trip_start_time=st.session_state.get("trip_start_time", "09:00"),
-
+        congestion_level=st.session_state.get("congestion_level", "normal"),
         on_progress=on_progress,
 
         input_warnings=input_warnings,

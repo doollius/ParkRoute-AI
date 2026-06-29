@@ -51,6 +51,7 @@ def reset_places_step() -> None:
 def reset_trip_step() -> None:
     """추가 정보 입력(2/2) 페이지 입력만 초기화."""
     st.session_state.optimization_mode = "minimize_walk"
+    st.session_state.congestion_level = "normal"
     _clear_trip_step_fields()
     st.session_state._reset_rule_picks = True
 
@@ -73,6 +74,7 @@ def init_session() -> None:
         "rule_to_pick": "__none__",
         "rule_type_pick": "__none__",
         "trip_start_time": "09:00",
+        "congestion_level": "normal",
         "route": None,
         "optimized": False,
         "logs": [],

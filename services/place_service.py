@@ -89,6 +89,7 @@ def _apply_confirmed_result(place: dict[str, Any], result: dict[str, Any]) -> No
     place["lng"] = result["lng"]
     place["normalized_address"] = result["normalized_address"]
     place["matched_name"] = result.get("matched_name") or result["normalized_address"]
+    place["poi_category"] = result.get("poi_category") or place.get("type", "")
     place["geocode_status"] = "confirmed"
     place["geocode_error"] = None
     place["poi_candidates"] = []
@@ -168,6 +169,7 @@ def select_poi_candidate(place_id: str, candidate_index: int) -> None:
             "lng": picked["lng"],
             "normalized_address": picked["normalized_address"],
             "matched_name": picked["name"],
+            "poi_category": picked.get("poi_category") or picked["name"],
         },
     )
 

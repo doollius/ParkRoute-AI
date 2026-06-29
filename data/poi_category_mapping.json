@@ -1,0 +1,29 @@
+{
+  "service_defaults": {
+    "카페": 4,
+    "음식점": 5,
+    "관광지": 7,
+    "문화시설": 6,
+    "쇼핑시설": 9,
+    "공원": 3,
+    "숙박시설": 5,
+    "기타": 5
+  },
+  "congestion_extra_minutes": {
+    "smooth": 0,
+    "normal": 3,
+    "busy": 7
+  },
+  "tmap_keywords": [
+    {"keywords": ["커피", "카페", "coffee", "cafe"], "category": "카페"},
+    {"keywords": ["음식", "식당", "레스토랑", "맛집", "restaurant", "food"], "category": "음식점"},
+    {"keywords": ["관광", "명소", "유적", "사찰", "박물관", "미술관"], "category": "관광지"},
+    {"keywords": ["문화", "전시", "공연", "극장", "영화"], "category": "문화시설"},
+    {"keywords": ["백화점", "마트", "쇼핑", "몰", "아울렛", "market", "department"], "category": "쇼핑시설"},
+    {"keywords": ["공원", "숲", "정원", "park"], "category": "공원"},
+    {"keywords": ["호텔", "모텔", "펜션", "숙박", "hotel"], "category": "숙박시설"},
+    {"keywords": ["역", "터미널", "공항", "station"], "category": "관광지"},
+    {"keywords": ["병원", "의원", "약국"], "category": "기타"},
+    {"keywords": ["주차", "parking"], "category": "기타"}
+  ]
+}

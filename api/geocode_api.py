@@ -43,6 +43,8 @@ def resolve_address(address: str) -> dict[str, Any]:
                 "normalized_address": poi["normalized_address"],
                 "source": "poi",
                 "geocode_note": f"주소 검색 실패 → POI 검색 사용 ({geo_exc})",
+                "poi_category": poi.get("poi_category"),
+                "matched_name": poi.get("name"),
             }
         except TmapApiError as poi_exc:
             raise TmapApiError(f"좌표 변환 실패: {geo_exc} / POI: {poi_exc}") from poi_exc
@@ -75,6 +77,7 @@ def resolve_place_query(query: str, *, max_candidates: int = 5) -> dict[str, Any
                     "lng": result["lng"],
                     "normalized_address": result["normalized_address"],
                     "matched_name": result["normalized_address"],
+                    "poi_category": result.get("poi_category"),
                 },
             }
         except TmapApiError as exc:
@@ -96,6 +99,7 @@ def resolve_place_query(query: str, *, max_candidates: int = 5) -> dict[str, Any
                 "lng": poi["lng"],
                 "normalized_address": poi["normalized_address"],
                 "matched_name": poi["name"],
+                "poi_category": poi.get("poi_category"),
             },
         }
     return {"status": "pick", "candidates": pois}

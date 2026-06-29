@@ -182,6 +182,7 @@ def optimize_route(
     on_progress: Callable[[str], None] | None = None,
     input_warnings: list[str] | None = None,
     excluded_places: list[dict[str, Any]] | None = None,
+    congestion_level: str = "normal",
 ) -> dict[str, Any]:
     def progress(msg: str) -> None:
         if on_progress:
@@ -202,6 +203,7 @@ def optimize_route(
     minimize_walk = optimization_mode != "minimize_time"
     user_start_fixed = start_idx is not None
     user_end_fixed = end_idx is not None
+    congestion_level = congestion_level or "normal"
 
     progress("이동시간 계산 중...")
     travel_matrix = build_travel_matrix(nodes, on_progress=on_progress)
@@ -217,9 +219,9 @@ def optimize_route(
         )
 
     progress("주차장 탐색 중...")
-    cluster_plan = build_cluster_plan(nodes, travel_matrix, travel_region)
+    cluster_plan = build_cluster_plan(nodes, travel_matrix, travel_region, congestion_level)
     cost_matrix = build_cluster_aware_cost_matrix(
-        travel_matrix, cluster_plan, nodes, minimize_walk
+        travel_matrix, cluster_plan, nodes, minimize_walk, congestion_level
     )
 
     trip_start_minutes = hhmm_to_minutes(trip_start_time) or 9 * 60
@@ -248,9 +250,9 @@ def optimize_route(
 
     if not order:
         relaxed_matrix = apply_walk_limit(travel_matrix, WALK_TIME_FALLBACK_MINUTES)
-        relaxed_plan = build_cluster_plan(nodes, relaxed_matrix, travel_region)
+        relaxed_plan = build_cluster_plan(nodes, relaxed_matrix, travel_region, congestion_level)
         relaxed_cost = build_cluster_aware_cost_matrix(
-            relaxed_matrix, relaxed_plan, nodes, minimize_walk
+            relaxed_matrix, relaxed_plan, nodes, minimize_walk, congestion_level
         )
         order, _, _ = _solve_order_flexible(
             relaxed_cost,
@@ -320,6 +322,17 @@ def optimize_route(
         start_name = nodes[start_idx].get("type") or nodes[start_idx].get("normalized_address") or "출발 지점"
         warnings.append(f"출발지를 지정하지 않아 **{start_name}** 에서 시작하는 경로를 선택했습니다.")
 
+    # 주차 거점 경로 안내
+    hub_savings = sum(
+        r.get("savings_sec", 0)
+        for r in cluster_plan.cluster_routing.values()
+        if r.get("use_parking")
+    )
+    if hub_savings > 0:
+        warnings.append(
+            f"공영주차장 거점 경로가 직접 차량 이동보다 약 {hub_savings // 60}분 유리하여 주차 중심 동선을 적용했습니다."
+        )
+
     progress("경로 재구성 중...")
     stops, segments, parkings = build_parking_aware_route(
         order,
@@ -332,6 +345,7 @@ def optimize_route(
         cluster_plan=cluster_plan,
         mark_start=user_start_fixed,
         mark_end=user_end_fixed,
+        congestion_level=congestion_level,
     )
 
     warnings.extend(_parking_warnings(order, travel_matrix, parkings))

@@ -25,11 +25,13 @@ def build_route_summary(
 
     car_time = sum(s["time_sec"] for s in segments if s["mode"] == "car")
     walk_time = sum(s["time_sec"] for s in segments if s["mode"] == "walk")
+    parking_event_time = sum(s["time_sec"] for s in segments if s["mode"] == "parking_event")
     total_distance = sum(s.get("distance_m") or 0 for s in segments)
     return {
-        "total_time_sec": car_time + walk_time,
+        "total_time_sec": car_time + walk_time + parking_event_time,
         "car_time_sec": car_time,
         "walk_time_sec": walk_time,
+        "parking_event_time_sec": parking_event_time,
         "total_distance_m": total_distance,
         "parking_count": parking_count,
         "parking_cost_won": parking_cost,

@@ -71,6 +71,7 @@ def geocode_address(address: str) -> dict[str, Any]:
         "lat": float(lat),
         "lng": float(lon),
         "normalized_address": normalized,
+        "poi_category": address.strip(),
     }
 
 
@@ -101,11 +102,21 @@ def _parse_poi_row(poi: dict[str, Any], fallback_name: str = "") -> dict[str, An
         ).strip()
     normalized = road or name
 
+    category_parts = [
+        poi.get("upperBizName") or "",
+        poi.get("middleBizName") or "",
+        poi.get("lowerBizName") or "",
+        poi.get("bizName") or "",
+        poi.get("className") or "",
+    ]
+    poi_category = " ".join(p for p in category_parts if p).strip() or name
+
     return {
         "name": name,
         "lat": float(lat),
         "lng": float(lon),
         "normalized_address": normalized,
+        "poi_category": poi_category,
     }
 
 

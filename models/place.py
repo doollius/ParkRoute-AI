@@ -18,6 +18,7 @@ def create_place() -> dict[str, Any]:
         "geocode_status": "pending",
         "poi_candidates": [],
         "matched_name": "",
+        "poi_category": "",
     }
 
 

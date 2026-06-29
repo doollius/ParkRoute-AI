@@ -131,6 +131,15 @@ def _render_travel_section() -> None:
         key="optimization_mode",
         label_visibility="collapsed",
     )
+    st.subheader("예상 혼잡도")
+    st.caption("주차·건물 접근에 소요되는 시간 보정에 사용됩니다.")
+    st.selectbox(
+        "예상 혼잡도",
+        options=["smooth", "normal", "busy"],
+        format_func=lambda x: {"smooth": "원활", "normal": "보통", "busy": "혼잡"}[x],
+        key="congestion_level",
+        label_visibility="collapsed",
+    )
 
 
 def _render_places_section() -> None:
