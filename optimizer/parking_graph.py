@@ -5,6 +5,7 @@ from typing import Any
 
 from constants.config import (
     PARKING_COUNT_MODE_PENALTY,
+    PARKING_NEARBY_RADIUS_M,
     PARKING_SCORE_FEE_WEIGHT,
     PARKING_TRANSITION_PENALTY,
 )
@@ -12,6 +13,7 @@ from optimizer.graph_builder import cluster_by_walk, edge_cost
 from optimizer.multimodal_cost import compare_cluster_routing, hub_loop_cost_seconds
 from services.map_service import get_travel_times
 from services.parking_service import get_parking_candidates, score_parking, select_parking_for_cluster
+from utils.geo import haversine_m
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.parking_cost import parse_fee
 from utils.parking_event import parking_event_seconds
@@ -26,16 +28,15 @@ class ClusterPlan:
     cluster_routing: dict[int, dict[str, Any]] = field(default_factory=dict)
 
 
-def _indices_within_walk_of_parking(
+def _indices_near_parking(
     parking: dict[str, Any],
     nodes: list[dict[str, Any]],
-    get_leg,
+    radius_m: int = PARKING_NEARBY_RADIUS_M,
 ) -> list[int]:
     indices: list[int] = []
     plat, plng = parking["lat"], parking["lng"]
     for i, node in enumerate(nodes):
-        leg = get_leg(plat, plng, node["lat"], node["lng"])
-        if leg.get("walk_allowed"):
+        if haversine_m(plat, plng, node["lat"], node["lng"]) <= radius_m:
             indices.append(i)
     return indices
 
@@ -43,15 +44,14 @@ def _indices_within_walk_of_parking(
 def _build_parking_first_clusters(
     nodes: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
-    get_leg,
 ) -> tuple[list[list[int]], dict[int, dict[str, Any]], set[str]]:
     """
-    주차 횟수 최소화: 공영주차장 기준 도보 9분 이내 POI 2개 이상이면 클러스터.
+    주차 횟수 최소화: 공영주차장 기준 1km 이내 POI 2개 이상이면 클러스터.
     겹치면 가장 많은 POI를 포함하는 주차장을 우선 선택.
     """
     covers: list[tuple[float, int, dict[str, Any], list[int]]] = []
     for parking in candidates:
-        indices = _indices_within_walk_of_parking(parking, nodes, get_leg)
+        indices = _indices_near_parking(parking, nodes)
         if len(indices) >= 2:
             center_lat = sum(nodes[i]["lat"] for i in indices) / len(indices)
             center_lng = sum(nodes[i]["lng"] for i in indices) / len(indices)
@@ -99,9 +99,7 @@ def build_cluster_plan(
     candidates = get_parking_candidates(nodes, travel_region)
 
     if mode == MODE_MINIMIZE_PARKING:
-        clusters, pre_parking, _used = _build_parking_first_clusters(
-            nodes, candidates, get_travel_times
-        )
+        clusters, pre_parking, _used = _build_parking_first_clusters(nodes, candidates)
     else:
         clusters = cluster_by_walk(travel_matrix)
         pre_parking = {}

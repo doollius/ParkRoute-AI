@@ -7,6 +7,7 @@ import streamlit as st
 
 from constants.config import (
     PARKING_CANDIDATES_PER_CLUSTER,
+    PARKING_NEARBY_RADIUS_M,
     PARKING_SCORE_DIST_WEIGHT,
     PARKING_SCORE_FEE_WEIGHT,
 )
@@ -111,15 +112,13 @@ def get_parking_candidates(places: list[dict[str, Any]], region: str) -> list[di
         candidates = fetch_public_parking(region_hint="")
 
     if places:
-        lats = [p["lat"] for p in places]
-        lngs = [p["lng"] for p in places]
-        pad = 0.08
-        min_lat, max_lat = min(lats) - pad, max(lats) + pad
-        min_lng, max_lng = min(lngs) - pad, max(lngs) + pad
         candidates = [
             p
             for p in candidates
-            if min_lat <= p["lat"] <= max_lat and min_lng <= p["lng"] <= max_lng
+            if any(
+                haversine_m(p["lat"], p["lng"], place["lat"], place["lng"]) <= PARKING_NEARBY_RADIUS_M
+                for place in places
+            )
         ]
 
     st.session_state.parking_candidates_cache = candidates
@@ -134,7 +133,7 @@ def score_parking(
     """Rules.md §6.2 — lower is better."""
     dist = haversine_m(center_lat, center_lng, candidate["lat"], candidate["lng"])
     fee = parse_fee(candidate.get("base_fee")) or 0
-    dist_norm = min(dist, 2000) / 2000
+    dist_norm = min(dist, PARKING_NEARBY_RADIUS_M) / PARKING_NEARBY_RADIUS_M
     fee_norm = min(fee, 10000) / 10000
     return dist_norm * PARKING_SCORE_DIST_WEIGHT + fee_norm * PARKING_SCORE_FEE_WEIGHT
 
@@ -162,8 +161,13 @@ def select_parking_for_cluster(
             continue
         ok = True
         for idx in place_indices:
-            leg = get_walk_leg(candidate["lat"], candidate["lng"], nodes[idx]["lat"], nodes[idx]["lng"])
-            if not leg.get("walk_allowed"):
+            dist = haversine_m(
+                candidate["lat"],
+                candidate["lng"],
+                nodes[idx]["lat"],
+                nodes[idx]["lng"],
+            )
+            if dist > PARKING_NEARBY_RADIUS_M:
                 ok = False
                 break
         if ok:
