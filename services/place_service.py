@@ -13,6 +13,7 @@ from utils.address_validator import (
     validate_place_name,
     validate_reservation_time,
 )
+from utils.optimization_mode import mode_label
 
 from models.visit_rule import PICK_NONE
 
@@ -491,8 +492,7 @@ def get_review_visit_types() -> list[str]:
 
 
 def get_review_optimization_goal() -> str:
-    mode = st.session_state.get("optimization_mode", "minimize_walk")
-    return "도보 최소화" if mode == "minimize_walk" else "총 이동시간 최소화"
+    return mode_label(st.session_state.get("optimization_mode"))
 
 
 def route_endpoint_status() -> str:

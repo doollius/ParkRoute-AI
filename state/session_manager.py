@@ -4,6 +4,7 @@ import streamlit as st
 
 from models.place import create_place
 from models.visit_rule import PICK_NONE
+from utils.optimization_mode import normalize_optimization_mode
 
 
 def _clear_place_widget_keys(place_ids: list[str]) -> None:
@@ -88,6 +89,9 @@ def init_session() -> None:
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+    st.session_state.optimization_mode = normalize_optimization_mode(
+        st.session_state.get("optimization_mode")
+    )
 
 
 def go_to(page: str) -> None:

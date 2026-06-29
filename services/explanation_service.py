@@ -4,6 +4,7 @@ from typing import Any
 
 from api.openai_api import generate_chat_completion
 from utils.env_loader import get_env
+from utils.optimization_mode import MODE_MINIMIZE_PARKING, mode_label, normalize_optimization_mode
 
 
 def generate_explanation(route: dict[str, Any]) -> str:
@@ -16,9 +17,18 @@ def generate_explanation(route: dict[str, Any]) -> str:
 def _generate_template(route: dict[str, Any]) -> str:
     summary = route.get("summary", {})
     parkings = route.get("parkings", [])
+    mode = normalize_optimization_mode(route.get("optimization_mode"))
+
+    if mode == MODE_MINIMIZE_PARKING:
+        intro = (
+            "주차 횟수를 줄이기 위해 공영주차장을 거점으로 두고 "
+            "여러 장소를 도보로 방문하는 동선을 구성했습니다."
+        )
+    else:
+        intro = "도보 이동시간을 줄이고 차량·주차 중심으로 방문 순서를 재구성했습니다."
 
     lines = [
-        "도보 이동을 줄이고 차량·주차 중심으로 방문 순서를 재구성했습니다.",
+        intro,
         f"총 이동 시간은 약 {summary.get('total_time_sec', 0) // 60}분 "
         f"(차량 {summary.get('car_time_sec', 0) // 60}분, "
         f"도보 {summary.get('walk_time_sec', 0) // 60}분)입니다.",
@@ -40,13 +50,14 @@ def _generate_openai(route: dict[str, Any]) -> str:
         return _generate_template(route)
 
     summary = route.get("summary", {})
+    mode = mode_label(route.get("optimization_mode"))
     stop_lines = []
     for s in route.get("stops", []):
         stop_lines.append(f"- {s.get('label', '?')}: {s.get('name', '')}")
 
     prompt = (
-        "다음 여행 경로를 3~4문장으로 친절하게 설명해줘. "
-        "도보 최소화와 주차장 선택 이유를 포함해.\n\n"
+        f"다음 여행 경로를 3~4문장으로 친절하게 설명해줘. "
+        f"최적화 모드는 「{mode}」이며, 이 모드의 의도를 반영해.\n\n"
         f"방문 순서:\n" + "\n".join(stop_lines) + "\n\n"
         f"차량 {summary.get('car_time_sec', 0) // 60}분, "
         f"도보 {summary.get('walk_time_sec', 0) // 60}분, "

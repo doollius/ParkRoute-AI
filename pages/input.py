@@ -7,6 +7,7 @@ from streamlit_folium import st_folium
 from models.visit_rule import PICK_NONE, RULE_BEFORE, RULE_IMMEDIATE, rule_label
 from services import place_service, visit_rule_service
 from state.session_manager import go_to, reset_places_step, reset_trip_step
+from utils.optimization_mode import MODE_DESCRIPTIONS, MODE_OPTIONS, mode_label, normalize_optimization_mode
 from utils.ui_helpers import bottom_action_row, bottom_button, is_confirm_pending, render_confirm_box, request_confirm
 
 _ADDRESS_HELP_HTML = """
@@ -124,13 +125,16 @@ def _render_trip_step() -> None:
 
 def _render_travel_section() -> None:
     st.subheader("최적화 모드")
+    mode = normalize_optimization_mode(st.session_state.get("optimization_mode"))
+    st.session_state.optimization_mode = mode
     st.selectbox(
         "최적화 모드",
-        options=["minimize_walk", "minimize_time"],
-        format_func=lambda x: "도보 최소화" if x == "minimize_walk" else "총 이동시간 최소화",
+        options=MODE_OPTIONS,
+        format_func=mode_label,
         key="optimization_mode",
         label_visibility="collapsed",
     )
+    st.caption(MODE_DESCRIPTIONS.get(st.session_state.optimization_mode, ""))
     st.subheader("예상 혼잡도")
     st.caption("주차·건물 접근에 소요되는 시간 보정에 사용됩니다.")
     st.selectbox(
@@ -390,10 +394,9 @@ def _render_places_progress() -> None:
 def _render_trip_progress() -> None:
     summary = place_service.progress_summary()
     failed_count = len(place_service.failed_geocode_places())
-    mode = st.session_state.get("optimization_mode", "minimize_walk")
-    mode_label = "도보 최소화" if mode == "minimize_walk" else "총 이동시간 최소화"
+    mode = normalize_optimization_mode(st.session_state.get("optimization_mode"))
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("최적화 모드", mode_label)
+    c1.metric("최적화 모드", mode_label(mode))
     geocode_label = f"{summary['geocoded_count']}/{summary['place_count']}"
     if failed_count:
         geocode_label += f" ({failed_count} 제외)"

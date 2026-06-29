@@ -5,6 +5,7 @@ OPTIMIZATION_TIMEOUT_SEC = 10
 
 # Parking optimization (Rules.md SC-004, §6.2)
 PARKING_TRANSITION_PENALTY = 25 * 60 * 10  # inter-cluster edge penalty (car-cost scale)
+PARKING_COUNT_MODE_PENALTY = 100 * 60 * 100  # 주차 횟수 최소화 — 차량 이동(주차) 횟수 우선
 PARKING_SCORE_DIST_WEIGHT = 0.6
 PARKING_SCORE_FEE_WEIGHT = 0.4
 PARKING_CANDIDATES_PER_CLUSTER = 8
