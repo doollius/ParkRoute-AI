@@ -26,20 +26,7 @@ def render() -> None:
         """
     )
 
-    st.markdown("#### ℹ️ 주소를 찾고 복사하는 방법")
-    st.markdown(
-        """
-**🔗 [네이버 지도](https://map.naver.com)**
-- 장소 검색
-- 장소 선택
-- 도로명 주소 또는 지번 주소 옆 **복사** 클릭
-
-**🔗 [구글 지도](https://www.google.com/maps)**
-- 장소 검색
-- 장소 선택
-- 표시된 주소 옆 **주소 복사** 클릭
-        """
-    )
+    st.caption("필요한 API 연결 상태를 확인한 후 시작해주세요.")
 
     can_start = st.session_state.get("api_check_all_passed", False)
 

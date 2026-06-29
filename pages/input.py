@@ -9,6 +9,17 @@ from services import place_service, visit_rule_service
 from state.session_manager import go_to, reset_places_step, reset_trip_step
 from utils.ui_helpers import bottom_action_row, bottom_button, is_confirm_pending, render_confirm_box, request_confirm
 
+_ADDRESS_HELP_HTML = """
+<div style="font-size:0.9rem;line-height:1.6;margin:0.25rem 0 0.75rem 0;">
+ℹ️ <strong>주소를 찾고 복사하는 방법</strong><br>
+🔗 <a href="https://map.naver.com" target="_blank">네이버 지도</a>
+&nbsp;→&nbsp;장소 검색&nbsp;→&nbsp;장소 선택&nbsp;→&nbsp;도로명/지번 주소 옆 '복사' 클릭
+&nbsp;&nbsp;|&nbsp;&nbsp;
+🔗 <a href="https://www.google.com/maps" target="_blank">구글 지도</a>
+&nbsp;→&nbsp;장소 검색&nbsp;→&nbsp;장소 선택&nbsp;→&nbsp;표시된 주소 복사
+</div>
+"""
+
 
 def render() -> None:
     if st.session_state.pop("_do_reset_trip", False):
@@ -19,10 +30,11 @@ def render() -> None:
     place_service.ensure_default_places()
     place_service.ensure_widget_keys()
     place_service.sync_places_from_widgets()
-    place_service.geocode_pending_places()
 
     step = st.session_state.get("input_step", "places")
-    if step == "trip":
+    if step == "places_confirm":
+        _render_places_confirm_step()
+    elif step == "trip":
         place_service.geocode_custom_endpoints()
         _render_trip_step()
     else:
@@ -31,7 +43,9 @@ def render() -> None:
 
 def _render_places_step() -> None:
     st.title("방문 장소")
-    st.caption("1/2 · 도로명주소 또는 지번주소만 입력합니다. (네이버 공유 URL 미지원)")
+    st.caption("1/3 · 지도에 등록된 장소명 또는 도로명 주소·지번 주소를 입력해주세요.")
+
+    st.markdown(_ADDRESS_HELP_HTML, unsafe_allow_html=True)
 
     _render_places_section()
     st.divider()
@@ -39,9 +53,64 @@ def _render_places_step() -> None:
     _render_places_actions()
 
 
+def _render_places_confirm_step() -> None:
+    st.title("방문 장소 확인")
+    st.caption("2/3 · 입력한 장소를 TMAP에서 검색했습니다. 결과를 확인해 주세요.")
+
+    if st.session_state.pop("_batch_resolving", False):
+        total = len(st.session_state.places)
+        with st.status("입력한 장소를 확인하고 있습니다…", expanded=True) as status:
+            progress = st.progress(0.0, text="검색 준비 중…")
+            for i in range(total):
+                progress.progress(i / max(total, 1), text=f"검색 중… ({i + 1}/{total})")
+                place_service.batch_resolve_place_at(i)
+            progress.progress(1.0, text="검색 완료")
+            status.update(label="장소 검색 완료", state="complete", expanded=False)
+
+    for i, place in enumerate(st.session_state.places):
+        pid = place["id"]
+        input_label = place.get("type", "").strip()
+        if place.get("use_manual_address"):
+            input_label = f"{input_label} · {place.get('raw_input', '').strip()}"
+
+        with st.container(border=True):
+            st.markdown(f"**장소 {i + 1}** · 입력: `{input_label or '(비어 있음)'}`")
+
+            status = place.get("geocode_status")
+            if status == "confirmed" and place.get("lat") is not None:
+                matched = place.get("matched_name") or place.get("type", "")
+                addr = place.get("normalized_address") or ""
+                st.success(f"✔ {matched}")
+                if addr and addr != matched:
+                    st.caption(addr)
+            elif status == "needs_pick":
+                st.warning("검색 결과가 여러 개입니다. 올바른 장소를 선택하세요.")
+                candidates = place.get("poi_candidates") or []
+                options = list(range(len(candidates)))
+                labels = [
+                    f"{c['name']} — {c['normalized_address']}" for c in candidates
+                ]
+                picked = st.radio(
+                    "후보 선택",
+                    options,
+                    format_func=lambda idx: labels[idx],
+                    key=f"pick_{pid}",
+                    label_visibility="collapsed",
+                )
+                if st.button("이 장소로 확정", key=f"pick_btn_{pid}"):
+                    place_service.select_poi_candidate(pid, picked)
+                    st.rerun()
+            else:
+                st.error(place.get("geocode_error") or "검색에 실패했습니다.")
+                st.caption("← 이전으로 돌아가 입력을 수정하세요.")
+
+    st.divider()
+    _render_places_confirm_actions()
+
+
 def _render_trip_step() -> None:
     st.title("추가 정보 입력")
-    st.caption("2/2 · 경로 계산에 반영할 조건을 입력해주세요.")
+    st.caption("3/3 · 경로 계산에 반영할 조건을 입력해주세요.")
 
     _render_travel_section()
     st.divider()
@@ -66,6 +135,11 @@ def _render_travel_section() -> None:
 
 def _render_places_section() -> None:
     st.subheader("방문 장소")
+    st.caption(
+        "기본: 지도에서 검색되는 **공식 장소명·상호명**을 입력합니다. "
+        "개인 주택 등은 **직접 주소 입력**을 사용하세요."
+    )
+
     header_col, add_col = st.columns([4, 1])
     with add_col:
         if st.button("+ 장소 추가", use_container_width=True):
@@ -74,91 +148,38 @@ def _render_places_section() -> None:
 
     for i, place in enumerate(st.session_state.places):
         pid = place["id"]
-        has_coords = place.get("lat") is not None and place.get("lng") is not None
-        error = place.get("geocode_error")
-        border = "border: 2px solid #ef4444;" if error else ""
+        manual = bool(st.session_state.get(f"manual_{pid}", False))
 
         with st.container(border=True):
-            if border:
-                st.markdown(f'<div style="{border}"></div>', unsafe_allow_html=True)
-
-            row1, order_col, del_col = st.columns([4, 1, 1])
+            row1, del_col = st.columns([5, 1])
             with row1:
                 st.markdown(f"**장소 {i + 1}**")
-            with order_col:
-                up_col, down_col = st.columns(2)
-                with up_col:
-                    if st.button("↑", key=f"up_{pid}", disabled=i == 0):
-                        place_service.move_place(pid, -1)
-                        st.rerun()
-                with down_col:
-                    if st.button("↓", key=f"down_{pid}", disabled=i == len(st.session_state.places) - 1):
-                        place_service.move_place(pid, 1)
-                        st.rerun()
             with del_col:
                 if st.button("삭제", key=f"del_{pid}", disabled=len(st.session_state.places) <= 2):
                     place_service.delete_place(pid)
                     st.rerun()
 
             st.text_input(
-                "주소 (도로명/지번) *",
-                key=f"raw_{pid}",
-                placeholder="예: 부산광역시 해운대구 해운대해변로 264",
+                "장소명 *",
+                key=f"type_{pid}",
+                placeholder="예: 경복궁, 현충원, SK아카데미, 부산역",
             )
-
-            c1, c2 = st.columns(2)
-            with c1:
-                st.text_input(
-                    "유형 *",
-                    key=f"type_{pid}",
-                    placeholder="예: 경복궁, 현충원, SK아카데미",
-                )
-            with c2:
-                st.text_input(
-                    "예약 시간 (선택)",
-                    key=f"res_{pid}",
-                    placeholder="HH:MM 예: 14:00",
-                )
-
-            if has_coords:
-                st.success(
-                    f"좌표 확인 · {place.get('normalized_address') or place.get('raw_input')} "
-                    f"({place['lat']:.5f}, {place['lng']:.5f})"
-                )
-                if place.get("_geocode_note"):
-                    st.caption(place["_geocode_note"])
-                if place.get("_manual_coords"):
-                    st.caption("수동 입력 좌표")
-            elif error:
-                st.error(error)
-                _render_manual_coords(pid)
-            elif place.get("raw_input", "").strip():
-                if st.button("좌표 확인", key=f"geo_{pid}"):
-                    place["_force_geocode"] = True
-                    st.rerun()
-                else:
-                    st.info("주소 입력 후 자동 확인되거나, '좌표 확인'을 누르세요.")
-
-
-def _render_manual_coords(pid: str) -> None:
-    with st.expander("수동 좌표 입력 (ER-004)", expanded=False):
-        st.caption("Geocoding 실패 시 위·경도를 직접 입력하세요. (예: 35.158, 129.060)")
-        c1, c2 = st.columns(2)
-        lat = c1.number_input("위도 (lat)", key=f"mlat_{pid}", format="%.6f", value=0.0)
-        lng = c2.number_input("경도 (lng)", key=f"mlng_{pid}", format="%.6f", value=0.0)
-        if st.button("좌표 적용", key=f"mapply_{pid}"):
-            if lat == 0.0 and lng == 0.0:
-                st.error("유효한 좌표를 입력하세요.")
+            if manual:
+                st.caption("방문 순서 등에서 보여질 이름입니다. (예: 외할머니댁)")
             else:
-                err = place_service.set_manual_coords(pid, lat, lng)
-                if err:
-                    st.error(err)
-                else:
-                    st.rerun()
+                st.caption("지도에서 검색되는 공식 장소명·상호명을 입력하세요.")
+
+            st.checkbox("직접 주소 입력", key=f"manual_{pid}")
+
+            if manual:
+                st.text_input(
+                    "주소 (도로명/지번) *",
+                    key=f"raw_{pid}",
+                    placeholder="예: 부산광역시 해운대구 해운대해변로 264",
+                )
 
 
 def _reset_rule_pick_widgets() -> None:
-    """Selectbox key 값은 위젯 렌더링 전에만 변경 가능."""
     st.session_state.rule_from_pick = PICK_NONE
     st.session_state.rule_to_pick = PICK_NONE
     st.session_state.rule_type_pick = PICK_NONE
@@ -348,20 +369,9 @@ def _render_route_section() -> None:
 
 def _render_places_progress() -> None:
     summary = place_service.progress_summary()
-    failed_count = len(place_service.failed_geocode_places())
-    c1, c2 = st.columns(2)
-    geocode_label = f"{summary['geocoded_count']}/{summary['place_count']}"
-    if failed_count:
-        geocode_label += f" ({failed_count} 실패)"
-    c1.metric("장소", geocode_label)
-    c2.metric("예약", f"{summary['reservation_count']}건")
+    st.metric("입력 장소", f"{summary['place_count']}곳")
 
     errors = place_service.places_step_errors()
-    if place_service.uses_partial_geocoding() and place_service.can_proceed_to_trip_step():
-        st.info(
-            f"좌표 변환 실패 {len(place_service.failed_geocode_places())}곳은 "
-            "다음 단계에서 제외하고 진행할 수 있습니다. (ER-005)"
-        )
     if errors:
         with st.expander("입력 확인 필요", expanded=True):
             for err in errors:
@@ -417,15 +427,37 @@ def _render_places_actions() -> None:
             right,
             "다음 →",
             type="primary",
-            disabled=not place_service.can_proceed_to_trip_step(),
+            disabled=not place_service.can_proceed_to_places_confirm(),
         ):
-            st.session_state.input_step = "trip"
+            st.session_state.input_step = "places_confirm"
+            st.session_state._batch_resolving = True
             st.rerun()
 
     st.divider()
     with bottom_action_row(2) as (left, _):
         if bottom_button(left, "초기화"):
             request_confirm("confirm_reset_places")
+            st.rerun()
+
+
+def _render_places_confirm_actions() -> None:
+    errors = place_service.places_confirm_errors()
+    if errors:
+        with st.expander("확인 필요", expanded=True):
+            for err in errors:
+                st.warning(err)
+
+    with bottom_action_row(2) as (left, right):
+        if bottom_button(left, "← 이전"):
+            st.session_state.input_step = "places"
+            st.rerun()
+        if bottom_button(
+            right,
+            "다음 →",
+            type="primary",
+            disabled=not place_service.can_proceed_to_trip_step(),
+        ):
+            st.session_state.input_step = "trip"
             st.rerun()
 
 
@@ -448,7 +480,7 @@ def _render_trip_actions() -> None:
 
     with bottom_action_row(2) as (left, right):
         if bottom_button(left, "← 이전"):
-            st.session_state.input_step = "places"
+            st.session_state.input_step = "places_confirm"
             st.rerun()
         if bottom_button(right, complete_label, type="primary", disabled=not place_service.can_complete()):
             go_to("review")
@@ -462,7 +494,6 @@ def _render_trip_actions() -> None:
 
 
 def render_places_map(places: list, start_id: str | None, end_id: str | None) -> None:
-    """Review 화면용 — Geocoding된 장소 지도."""
     points = [p for p in places if p.get("lat") is not None and p.get("lng") is not None]
     if not points:
         st.info("지도에 표시할 좌표가 없습니다.")

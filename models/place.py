@@ -14,6 +14,10 @@ def create_place() -> dict[str, Any]:
         "type": "",
         "reservation_time": None,
         "geocode_error": None,
+        "use_manual_address": False,
+        "geocode_status": "pending",
+        "poi_candidates": [],
+        "matched_name": "",
     }
 
 
@@ -29,7 +33,7 @@ def place_selection_label(
     index: int,
     all_places: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Selectbox / 방문 규칙용 — 사용자가 입력한 장소 이름(유형) 표시."""
+    """Selectbox / 방문 규칙용 — 사용자가 입력한 장소명 표시."""
     name = place_display_name(place, index)
     if all_places:
         same_count = sum(

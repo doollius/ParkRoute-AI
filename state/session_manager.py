@@ -8,7 +8,7 @@ from models.visit_rule import PICK_NONE
 
 def _clear_place_widget_keys(place_ids: list[str]) -> None:
     for pid in place_ids:
-        for prefix in ("raw_", "type_", "res_", "mlat_", "mlng_"):
+        for prefix in ("raw_", "type_", "manual_", "mlat_", "mlng_", "pick_"):
             st.session_state.pop(f"{prefix}{pid}", None)
 
 
@@ -42,7 +42,7 @@ def reset_places_step() -> None:
         pid = place["id"]
         st.session_state[f"raw_{pid}"] = ""
         st.session_state[f"type_{pid}"] = ""
-        st.session_state[f"res_{pid}"] = ""
+        st.session_state[f"manual_{pid}"] = False
 
     # 장소 ID가 바뀌므로 추가 정보(2/2)의 장소 연동 항목도 함께 초기화
     _clear_trip_step_fields()

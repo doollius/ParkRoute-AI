@@ -4,7 +4,7 @@ from typing import Any
 
 import streamlit as st
 
-from api.geocode_api import resolve_address
+from api.geocode_api import resolve_address, resolve_place_query
 from api.tmap_api import TmapGeocodingError
 from models.place import create_place, place_selection_label
 from services import visit_rule_service
@@ -20,6 +20,19 @@ CUSTOM_START_ID = "__custom_start__"
 CUSTOM_END_ID = "__custom_end__"
 
 
+def _clear_place_geocode(place: dict[str, Any]) -> None:
+    place["lat"] = None
+    place["lng"] = None
+    place["normalized_address"] = ""
+    place["geocode_error"] = None
+    place["geocode_status"] = "pending"
+    place["poi_candidates"] = []
+    place["matched_name"] = ""
+    place.pop("_geocoded_for", None)
+    place.pop("_geocode_note", None)
+    place.pop("_manual_coords", None)
+
+
 def ensure_default_places() -> None:
     if not st.session_state.places:
         st.session_state.places = [create_place(), create_place()]
@@ -32,77 +45,136 @@ def ensure_widget_keys() -> None:
             st.session_state[f"raw_{pid}"] = place.get("raw_input", "")
         if f"type_{pid}" not in st.session_state:
             st.session_state[f"type_{pid}"] = place.get("type", "")
-        if f"res_{pid}" not in st.session_state:
-            st.session_state[f"res_{pid}"] = place.get("reservation_time") or ""
+        if f"manual_{pid}" not in st.session_state:
+            st.session_state[f"manual_{pid}"] = place.get("use_manual_address", False)
 
 
 def sync_places_from_widgets() -> None:
     for place in st.session_state.places:
         pid = place["id"]
+        manual = bool(st.session_state.get(f"manual_{pid}", False))
+        if manual != place.get("use_manual_address"):
+            place["use_manual_address"] = manual
+            _clear_place_geocode(place)
+
+        place["type"] = str(st.session_state.get(f"type_{pid}", place.get("type", ""))).strip()
+
         raw = str(st.session_state.get(f"raw_{pid}", "")).strip()
         if raw != place.get("raw_input", ""):
             place["raw_input"] = raw
-            place["lat"] = None
-            place["lng"] = None
-            place["normalized_address"] = ""
-            place["geocode_error"] = None
-            place["_geocoded_for"] = ""
+            if manual:
+                _clear_place_geocode(place)
 
-        place["type"] = str(st.session_state.get(f"type_{pid}", place.get("type", ""))).strip()
-        res_raw = str(st.session_state.get(f"res_{pid}", "")).strip()
-        place["reservation_time"] = res_raw or None
+        prev_name = place.get("_synced_name", "")
+        if place["type"] != prev_name:
+            place["_synced_name"] = place["type"]
+            if not manual:
+                _clear_place_geocode(place)
 
 
-def _should_geocode(raw: str) -> bool:
-    ok, _ = validate_address(raw)
-    if not ok:
-        return False
-    if len(raw) >= 12:
-        return True
-    return any(token in raw for token in ("로 ", "길 ", "동 ", "읍 ", "면 ", "리 ", "번길"))
+def batch_resolve_places() -> None:
+    """「다음」 클릭 시 모든 장소를 TMAP으로 일괄 검색."""
+    for place in st.session_state.places:
+        _resolve_single_place(place)
+
+
+def batch_resolve_place_at(index: int) -> None:
+    places = st.session_state.places
+    if 0 <= index < len(places):
+        _resolve_single_place(places[index])
+
+
+def _apply_confirmed_result(place: dict[str, Any], result: dict[str, Any]) -> None:
+    place["lat"] = result["lat"]
+    place["lng"] = result["lng"]
+    place["normalized_address"] = result["normalized_address"]
+    place["matched_name"] = result.get("matched_name") or result["normalized_address"]
+    place["geocode_status"] = "confirmed"
+    place["geocode_error"] = None
+    place["poi_candidates"] = []
+    place["_geocoded_for"] = place.get("type") or place.get("raw_input", "")
+
+
+def _resolve_single_place(place: dict[str, Any]) -> None:
+    manual = place.get("use_manual_address", False)
+    name = place.get("type", "").strip()
+
+    if manual:
+        raw = place.get("raw_input", "").strip()
+        if not raw:
+            _clear_place_geocode(place)
+            place["geocode_status"] = "failed"
+            place["geocode_error"] = "주소를 입력하세요."
+            return
+        ok, msg = validate_address(raw)
+        if not ok:
+            _clear_place_geocode(place)
+            place["geocode_status"] = "failed"
+            place["geocode_error"] = msg
+            return
+        try:
+            result = resolve_address(raw)
+            _apply_confirmed_result(
+                place,
+                {
+                    "lat": result["lat"],
+                    "lng": result["lng"],
+                    "normalized_address": result["normalized_address"],
+                    "matched_name": name or result["normalized_address"],
+                },
+            )
+        except TmapGeocodingError as exc:
+            _clear_place_geocode(place)
+            place["geocode_status"] = "failed"
+            place["geocode_error"] = str(exc)
+        return
+
+    if not name:
+        _clear_place_geocode(place)
+        place["geocode_status"] = "failed"
+        place["geocode_error"] = "장소명을 입력하세요."
+        return
+
+    outcome = resolve_place_query(name)
+    status = outcome.get("status")
+    if status == "confirmed":
+        _apply_confirmed_result(place, outcome["result"])
+    elif status == "pick":
+        place["geocode_status"] = "needs_pick"
+        place["poi_candidates"] = outcome.get("candidates", [])
+        place["geocode_error"] = None
+        place["lat"] = None
+        place["lng"] = None
+        place["normalized_address"] = ""
+        place["matched_name"] = ""
+    else:
+        _clear_place_geocode(place)
+        place["geocode_status"] = "failed"
+        place["geocode_error"] = outcome.get("error") or "검색에 실패했습니다."
+
+
+def select_poi_candidate(place_id: str, candidate_index: int) -> None:
+    place = get_place_by_id(place_id)
+    if not place:
+        return
+    candidates = place.get("poi_candidates") or []
+    if candidate_index < 0 or candidate_index >= len(candidates):
+        return
+    picked = candidates[candidate_index]
+    _apply_confirmed_result(
+        place,
+        {
+            "lat": picked["lat"],
+            "lng": picked["lng"],
+            "normalized_address": picked["normalized_address"],
+            "matched_name": picked["name"],
+        },
+    )
 
 
 def geocode_pending_places() -> None:
-    for place in st.session_state.places:
-        raw = place.get("raw_input", "").strip()
-        if not raw:
-            place["geocode_error"] = None
-            place["lat"] = None
-            place["lng"] = None
-            continue
-
-        if place.get("_geocoded_for") == raw and place.get("lat") is not None:
-            continue
-
-        ok, msg = validate_address(raw)
-        if not ok:
-            place["geocode_error"] = msg
-            place["lat"] = None
-            place["lng"] = None
-            place["normalized_address"] = ""
-            continue
-
-        if not _should_geocode(raw) and not place.pop("_force_geocode", False):
-            place["geocode_error"] = None
-            continue
-
-        try:
-            result = resolve_address(raw)
-            place["lat"] = result["lat"]
-            place["lng"] = result["lng"]
-            place["normalized_address"] = result["normalized_address"]
-            place["geocode_error"] = None
-            place["_geocoded_for"] = raw
-            if result.get("source") == "poi":
-                note = result.get("geocode_note") or "POI 검색으로 좌표를 확인했습니다."
-                place["_geocode_note"] = note
-            else:
-                place.pop("_geocode_note", None)
-        except TmapGeocodingError as exc:
-            place["geocode_error"] = str(exc)
-            place["lat"] = None
-            place["lng"] = None
-            place["normalized_address"] = ""
+    """레거시 — 입력 중 실시간 geocoding 비활성화. 확인 단계에서만 처리."""
+    return
 
 
 def add_place() -> None:
@@ -111,8 +183,8 @@ def add_place() -> None:
     place = create_place()
     st.session_state.places.append(place)
     st.session_state[f"raw_{place['id']}"] = ""
-    st.session_state[f"type_{place['id']}"] = place["type"]
-    st.session_state[f"res_{place['id']}"] = ""
+    st.session_state[f"type_{place['id']}"] = ""
+    st.session_state[f"manual_{place['id']}"] = False
 
 
 def move_place(place_id: str, direction: int) -> None:
@@ -141,11 +213,12 @@ def set_manual_coords(place_id: str, lat: float, lng: float) -> str | None:
     place = get_place_by_id(place_id)
     if not place:
         return "장소를 찾을 수 없습니다."
-    raw = place.get("raw_input", "").strip()
+    raw = place.get("raw_input", "").strip() or place.get("type", "").strip()
     place["lat"] = lat
     place["lng"] = lng
     place["normalized_address"] = raw or f"{lat:.5f}, {lng:.5f}"
     place["geocode_error"] = None
+    place["geocode_status"] = "confirmed"
     place["_geocoded_for"] = raw
     place["_manual_coords"] = True
     place.pop("_geocode_note", None)
@@ -156,7 +229,7 @@ def delete_place(place_id: str) -> None:
     if len(st.session_state.places) <= 2:
         return
     st.session_state.places = [p for p in st.session_state.places if p["id"] != place_id]
-    for key in (f"raw_{place_id}", f"type_{place_id}", f"res_{place_id}"):
+    for key in (f"raw_{place_id}", f"type_{place_id}", f"manual_{place_id}"):
         st.session_state.pop(key, None)
     if st.session_state.get("start_place_id") == place_id:
         st.session_state.start_place_id = None
@@ -171,12 +244,17 @@ def geocoded_places() -> list[dict[str, Any]]:
 def failed_geocode_places() -> list[dict[str, Any]]:
     failed: list[dict[str, Any]] = []
     for place in st.session_state.places:
-        raw = place.get("raw_input", "").strip()
-        if not raw:
+        if place.get("geocode_status") == "failed":
+            failed.append(place)
+        elif place.get("geocode_status") == "needs_pick":
             continue
-        if place.get("lat") is None or place.get("lng") is None:
+        elif place.get("lat") is None and (place.get("type") or place.get("raw_input")):
             failed.append(place)
     return failed
+
+
+def needs_pick_places() -> list[dict[str, Any]]:
+    return [p for p in st.session_state.places if p.get("geocode_status") == "needs_pick"]
 
 
 def _base_validation_errors() -> list[str]:
@@ -202,7 +280,7 @@ def _endpoint_validation_errors() -> list[str]:
                 err = st.session_state.get("custom_start_geocode_error") or "좌표 변환 중이거나 실패했습니다."
                 errors.append(f"출발지: {err}")
     elif st.session_state.get("start_place_id") and st.session_state.start_place_id not in geocoded_ids:
-        errors.append("출발지 좌표가 없습니다. 좌표 변환을 완료하거나 다른 장소를 선택하세요.")
+        errors.append("출발지 좌표가 없습니다. 장소 확인을 완료하거나 다른 장소를 선택하세요.")
 
     if st.session_state.get("use_custom_end"):
         addr = str(st.session_state.get("custom_end_address", "")).strip()
@@ -216,7 +294,7 @@ def _endpoint_validation_errors() -> list[str]:
                 err = st.session_state.get("custom_end_geocode_error") or "좌표 변환 중이거나 실패했습니다."
                 errors.append(f"도착지: {err}")
     elif st.session_state.get("end_place_id") and st.session_state.end_place_id not in geocoded_ids:
-        errors.append("도착지 좌표가 없습니다. 좌표 변환을 완료하거나 다른 장소를 선택하세요.")
+        errors.append("도착지 좌표가 없습니다. 장소 확인을 완료하거나 다른 장소를 선택하세요.")
 
     start_id = _resolved_start_place_id()
     end_id = _resolved_end_place_id()
@@ -383,7 +461,6 @@ def get_review_end_text() -> str:
 
 
 def get_review_visit_types() -> list[str]:
-    """출발·도착(방문 장소 선택)으로 지정된 ID를 제외한 방문지 유형."""
     exclude_ids: set[str] = set()
     if not st.session_state.get("use_custom_start"):
         start_id = st.session_state.get("start_place_id")
@@ -429,31 +506,35 @@ def resolved_end_place_id() -> str | None:
     return _resolved_end_place_id()
 
 
-def _place_input_errors(strict_geocode: bool) -> list[str]:
+def _place_text_errors() -> list[str]:
     errors: list[str] = []
     for i, place in enumerate(st.session_state.places):
-        raw = place.get("raw_input", "").strip()
         type_ok, type_msg = validate_place_name(place.get("type"))
         if not type_ok:
             errors.append(f"장소 {i + 1}: {type_msg}")
-        if len(raw) < 2:
-            errors.append(f"장소 {i + 1}: 주소를 입력하세요.")
-            continue
-        ok, msg = validate_address(raw)
-        if not ok:
-            errors.append(f"장소 {i + 1}: {msg}")
-            continue
-        if strict_geocode and (place.get("lat") is None or place.get("lng") is None):
-            err = place.get("geocode_error") or "좌표 변환 중이거나 실패했습니다."
-            errors.append(f"장소 {i + 1}: {err}")
-        res_ok, res_msg = validate_reservation_time(place.get("reservation_time"))
-        if not res_ok:
-            errors.append(f"장소 {i + 1}: {res_msg}")
+        if place.get("use_manual_address"):
+            raw = place.get("raw_input", "").strip()
+            if len(raw) < 2:
+                errors.append(f"장소 {i + 1}: 주소를 입력하세요.")
+            else:
+                ok, msg = validate_address(raw)
+                if not ok:
+                    errors.append(f"장소 {i + 1}: {msg}")
     return errors
 
 
-def _route_point_errors(valid_ids: set[str]) -> list[str]:
-    return _endpoint_validation_errors()
+def _place_input_errors(strict_geocode: bool) -> list[str]:
+    errors = _place_text_errors()
+    if strict_geocode:
+        for i, place in enumerate(st.session_state.places):
+            if place.get("lat") is None or place.get("lng") is None:
+                err = place.get("geocode_error") or "좌표가 확정되지 않았습니다."
+                errors.append(f"장소 {i + 1}: {err}")
+        for i, place in enumerate(st.session_state.places):
+            res_ok, res_msg = validate_reservation_time(place.get("reservation_time"))
+            if not res_ok:
+                errors.append(f"장소 {i + 1}: {res_msg}")
+    return errors
 
 
 def validation_errors() -> list[str]:
@@ -474,19 +555,11 @@ def validation_errors() -> list[str]:
 
 
 def partial_validation_errors() -> list[str]:
-    """ER-005 — validate geocoded subset only."""
     errors = _base_validation_errors()
     geocoded = geocoded_places()
     if len(geocoded) < 2:
-        errors.append("좌표 변환이 완료된 장소가 2곳 이상 필요합니다.")
+        errors.append("좌표가 확정된 장소가 2곳 이상 필요합니다.")
     errors.extend(_endpoint_validation_errors())
-    for i, place in enumerate(geocoded):
-        type_ok, type_msg = validate_place_name(place.get("type"))
-        if not type_ok:
-            errors.append(f"장소 {i + 1}: {type_msg}")
-        res_ok, res_msg = validate_reservation_time(place.get("reservation_time"))
-        if not res_ok:
-            errors.append(f"장소 {i + 1}: {res_msg}")
     return errors
 
 
@@ -495,41 +568,33 @@ def uses_partial_geocoding() -> bool:
 
 
 def places_step_errors() -> list[str]:
-    """Step 1 (방문 장소) — address + geocoding only."""
-    errors: list[str] = []
-    if len(st.session_state.places) < 2:
-        errors.append("장소는 최소 2개 이상 필요합니다.")
-
-    for i, place in enumerate(st.session_state.places):
-        raw = place.get("raw_input", "").strip()
-        type_ok, type_msg = validate_place_name(place.get("type"))
-        if not type_ok:
-            errors.append(f"장소 {i + 1}: {type_msg}")
-        if len(raw) < 2:
-            errors.append(f"장소 {i + 1}: 주소를 입력하세요.")
-            continue
-        ok, msg = validate_address(raw)
-        if not ok:
-            errors.append(f"장소 {i + 1}: {msg}")
-            continue
-        res_ok, res_msg = validate_reservation_time(place.get("reservation_time"))
-        if not res_ok:
-            errors.append(f"장소 {i + 1}: {res_msg}")
-
-    geocoded = geocoded_places()
-    if len(geocoded) < 2:
-        errors.append("좌표 변환이 완료된 장소가 2곳 이상 필요합니다.")
-        for i, place in enumerate(st.session_state.places):
-            raw = place.get("raw_input", "").strip()
-            if raw and (place.get("lat") is None or place.get("lng") is None):
-                err = place.get("geocode_error") or "좌표 변환 중이거나 실패했습니다."
-                errors.append(f"장소 {i + 1}: {err}")
-
+    """Step 1 (방문 장소) — 텍스트 입력만 검증 (API 호출 없음)."""
+    errors = _base_validation_errors()
+    errors.extend(_place_text_errors())
     return errors
 
 
-def can_proceed_to_trip_step() -> bool:
+def places_confirm_errors() -> list[str]:
+    errors: list[str] = []
+    for i, place in enumerate(st.session_state.places):
+        status = place.get("geocode_status")
+        if status == "needs_pick":
+            errors.append(f"장소 {i + 1}: 후보 중 올바른 장소를 선택하세요.")
+        elif status == "failed":
+            errors.append(f"장소 {i + 1}: {place.get('geocode_error') or '검색 실패'}")
+        elif place.get("lat") is None:
+            errors.append(f"장소 {i + 1}: 위치 확인이 완료되지 않았습니다.")
+    if len(geocoded_places()) < 2:
+        errors.append("확정된 장소가 2곳 이상 필요합니다.")
+    return errors
+
+
+def can_proceed_to_places_confirm() -> bool:
     return not places_step_errors()
+
+
+def can_proceed_to_trip_step() -> bool:
+    return not places_confirm_errors()
 
 
 def can_complete() -> bool:
@@ -541,7 +606,6 @@ def can_complete() -> bool:
 
 
 def prepare_optimization_input() -> tuple[list[dict[str, Any]], list[str], list[dict[str, Any]]]:
-    """Return (places, warnings, excluded_places) for route optimization."""
     geocoded = geocoded_places()
     excluded = failed_geocode_places()
     warnings: list[str] = []
@@ -551,9 +615,9 @@ def prepare_optimization_input() -> tuple[list[dict[str, Any]], list[str], list[
             f"좌표 변환 실패 {len(excluded)}곳은 제외하고 최적화합니다. (ER-005)"
         )
         for place in excluded:
-            addr = place.get("raw_input", "")
+            label = place.get("type") or place.get("raw_input", "")
             reason = place.get("geocode_error") or "좌표 없음"
-            warnings.append(f"· 제외 — {addr}: {reason}")
+            warnings.append(f"· 제외 — {label}: {reason}")
 
     valid_ids = {p["id"] for p in geocoded}
     pruned_rules = [
@@ -580,11 +644,10 @@ def get_place_by_id(place_id: str | None) -> dict[str, Any] | None:
 def progress_summary() -> dict[str, int]:
     places = st.session_state.places
     geocoded = sum(1 for p in places if p.get("lat") is not None)
-    reserved = sum(1 for p in places if p.get("reservation_time"))
     return {
         "place_count": len(places),
         "geocoded_count": geocoded,
-        "reservation_count": reserved,
+        "reservation_count": 0,
     }
 
 

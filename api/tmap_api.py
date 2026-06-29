@@ -74,14 +74,49 @@ def geocode_address(address: str) -> dict[str, Any]:
     }
 
 
-def search_poi(keyword: str, count: int = 1) -> dict[str, Any]:
-    """TMAP POI search fallback when fullAddrGeo fails."""
+def _parse_poi_row(poi: dict[str, Any], fallback_name: str = "") -> dict[str, Any] | None:
+    lat = poi.get("frontLat") or poi.get("noorLat")
+    lon = poi.get("frontLon") or poi.get("noorLon")
+    if not lat or not lon:
+        return None
+
+    name = (poi.get("name") or fallback_name).strip()
+    road = None
+    new_addr = poi.get("newAddressList")
+    if isinstance(new_addr, dict):
+        rows = new_addr.get("newAddress", [])
+        if isinstance(rows, dict):
+            rows = [rows]
+        if rows:
+            road = (rows[0].get("fullAddressStreet") or "").strip()
+    if not road:
+        road = " ".join(
+            p
+            for p in [
+                poi.get("upperAddrName") or "",
+                poi.get("middleAddrName") or "",
+                poi.get("lowerAddrName") or "",
+            ]
+            if p
+        ).strip()
+    normalized = road or name
+
+    return {
+        "name": name,
+        "lat": float(lat),
+        "lng": float(lon),
+        "normalized_address": normalized,
+    }
+
+
+def search_pois(keyword: str, count: int = 5) -> list[dict[str, Any]]:
+    """TMAP POI 검색 — 최대 count개 후보 반환."""
     resp = requests.get(
         "https://apis.openapi.sk.com/tmap/pois",
         params={
             "version": "1",
             "searchKeyword": keyword.strip(),
-            "count": count,
+            "count": max(1, min(count, 10)),
             "reqCoordType": "WGS84GEO",
             "resCoordType": "WGS84GEO",
         },
@@ -96,26 +131,26 @@ def search_poi(keyword: str, count: int = 1) -> dict[str, Any]:
     if isinstance(pois, dict):
         pois = [pois]
     if not pois:
+        return []
+
+    results: list[dict[str, Any]] = []
+    for poi in pois:
+        parsed = _parse_poi_row(poi, keyword)
+        if parsed:
+            results.append(parsed)
+    return results
+
+
+def search_poi(keyword: str, count: int = 1) -> dict[str, Any]:
+    """TMAP POI search fallback when fullAddrGeo fails."""
+    results = search_pois(keyword, count=count)
+    if not results:
         raise TmapApiError("POI 검색 결과가 없습니다.")
-
-    poi = pois[0]
-    lat = poi.get("frontLat") or poi.get("noorLat")
-    lon = poi.get("frontLon") or poi.get("noorLon")
-    if not lat or not lon:
-        raise TmapApiError("POI 좌표가 없습니다.")
-
-    name = (poi.get("name") or keyword).strip()
-    road = (poi.get("newAddressList", {}).get("newAddress", [{}])[0].get("fullAddressStreet")
-            if isinstance(poi.get("newAddressList"), dict) else None)
-    if not road:
-        road = (poi.get("upperAddrName") or "") + " " + (poi.get("middleAddrName") or "")
-        road = (road + " " + (poi.get("lowerAddrName") or "")).strip()
-    normalized = road or name
-
+    first = results[0]
     return {
-        "lat": float(lat),
-        "lng": float(lon),
-        "normalized_address": normalized,
+        "lat": first["lat"],
+        "lng": first["lng"],
+        "normalized_address": first["normalized_address"],
     }
 
 
