@@ -4,36 +4,23 @@ from typing import Any, Callable
 
 import streamlit as st
 
-from constants.config import (
-    OPTIMIZATION_BASE_SEC,
-    TMAP_REQUEST_DELAY_SEC,
-    TMAP_SEC_PER_PARKING_LEG,
-)
-from services.parking_service import tmap_parking_validate_limit
+from constants.config import OPTIMIZATION_BASE_SEC
 from services import place_service
 from services.route_service import RouteOptimizationError, optimize_route
 
 
-def _estimate_near_walk_pairs(place_count: int) -> int:
-    """근거리 도보 API 호출 수 상한 (실제는 장소 배치에 따라 더 적을 수 있음)."""
-    n = max(2, place_count)
-    # 도시 내 여행: 대략 인접 쌍만 근거리로 가정
-    return min(n * (n - 1), n * 3)
-
-
 def estimate_optimization_range(place_count: int) -> tuple[int, int]:
-    """TMAP 행렬 + 주차장 매칭 API 지연을 반영한 예상 소요(초) 범위."""
+    """k-NN 2-pass + 주차장 검색 반영 예상 소요(초)."""
     n = max(2, place_count)
-    car_matrix_sec = 8  # Matrix API 1회
-    walk_pairs = _estimate_near_walk_pairs(n)
-    walk_sec = walk_pairs * TMAP_SEC_PER_PARKING_LEG
-    parking_legs = tmap_parking_validate_limit(n) * n * TMAP_SEC_PER_PARKING_LEG
-    api_calls = 1 + walk_pairs + tmap_parking_validate_limit(n) * n
-    kakao_sec = n * 1  # POI별 카카오 1회
-    throttle_sec = int(api_calls * TMAP_REQUEST_DELAY_SEC)
-    low = OPTIMIZATION_BASE_SEC + car_matrix_sec + walk_sec + parking_legs + throttle_sec + kakao_sec
-    high = int(low * 1.75) + 15
-    return max(45, low), max(75, high)
+    haversine_sec = 3
+    parking_sec = n * 2
+    ortools_sec = 8
+    car_matrix_sec = 8
+    walk_legs = max(1, (n - 1) + n * 2)
+    walk_sec = walk_legs * 2
+    low = OPTIMIZATION_BASE_SEC + haversine_sec + parking_sec + ortools_sec + car_matrix_sec + walk_sec
+    high = int(low * 1.5) + 10
+    return max(30, low), max(60, high)
 
 
 def estimate_optimization_seconds(place_count: int) -> int:

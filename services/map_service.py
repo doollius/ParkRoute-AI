@@ -6,6 +6,7 @@ import streamlit as st
 
 from api.tmap_api import TmapApiError, get_car_route, get_car_route_matrix, get_walk_route
 from constants.config import PARKING_HAVERSINE_PREFILTER_M, WALK_TIME_LIMIT_MINUTES
+from optimizer.haversine_matrix import haversine_leg
 from utils.geo import coord_key, estimate_travel_sec, haversine_m, is_trivial_route, zero_route_metrics
 
 WALK_LIMIT_SEC = WALK_TIME_LIMIT_MINUTES * 60
@@ -205,11 +206,40 @@ def apply_walk_limit(
     return updated
 
 
-def build_travel_matrix(
+def get_haversine_travel_times(
+    from_lat: float,
+    from_lng: float,
+    to_lat: float,
+    to_lng: float,
+    **_: Any,
+) -> dict[str, Any]:
+    """Pass 1 — API 없이 직선 기반 leg (hub 비용·클러스터 비교용)."""
+    return haversine_leg(from_lat, from_lng, to_lat, to_lng)
+
+
+def _merge_walk_into_leg(
+    leg: dict[str, Any],
+    walk: dict[str, int],
+    walk_est: bool,
+    err: str | None,
+) -> dict[str, Any]:
+    walk_allowed = int(walk["time_sec"]) <= WALK_LIMIT_SEC
+    return {
+        **leg,
+        "walk_time_sec": walk["time_sec"],
+        "walk_distance_m": walk.get("distance_m"),
+        "walk_allowed": walk_allowed,
+        "walk_estimated": walk_est,
+        "estimated": leg.get("car_estimated") or walk_est,
+        "walk_error": err or leg.get("walk_error"),
+    }
+
+
+def get_travel_times(
     nodes: list[dict[str, Any]],
     on_progress: Callable[[str], None] | None = None,
 ) -> list[list[dict[str, Any]]]:
-    """Build NxN travel data matrix — 차량은 Matrix API 1회, 도보는 근거리만 개별 호출."""
+    """(legacy) 전체 N×N — 테스트·호환용. optimize_route는 refine_travel_matrix 사용."""
     n = len(nodes)
     coords = [(float(node["lat"]), float(node["lng"])) for node in nodes]
     matrix: list[list[dict[str, Any]]] = []

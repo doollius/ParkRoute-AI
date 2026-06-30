@@ -17,8 +17,11 @@ KAKAO_PARKING_CATEGORY_CODE = "PK6"
 KAKAO_PARKING_PAGE_SIZE = 15  # 카카오 API 페이지당 최대 15건
 KAKAO_PARKING_MAX_RESULTS = 45  # 카카오 category 검색 최대 45건 (단일 호출 상한)
 KAKAO_PARKING_PER_POI_LIMIT = 20  # POI마다 조회할 주차장 수
-KAKAO_PARKING_PER_POI_RADIUS_M = 1000  # POI 중심 반경 (카카오 PK6)
+KAKAO_PARKING_PER_POI_RADIUS_M = 500  # POI 중심 1차 반경 (직선, 교집합 hub)
+KAKAO_PARKING_RADIUS_FALLBACK_M = 800  # 1차 0건일 때 확장 반경
 KAKAO_HUB_CANDIDATES_PER_GROUP = 5  # POI 그룹 내 겹치는 hub 후보 상위 N개
+# k-NN 직선 그래프 (Pass 1 순서 최적화)
+KNN_EDGE_K = 3  # 노드당 직선 최근접 이웃 수
 # (legacy) 여행 중심 검색 — POI별 검색으로 대체됨
 KAKAO_PARKING_SEARCH_RADIUS_M = 2000
 KAKAO_PARKING_MAX_DISTANCE_M = 2000

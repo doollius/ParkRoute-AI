@@ -22,6 +22,7 @@ from services.parking_service import (
     tmap_parking_validate_limit,
 )
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
+from utils.geo import estimate_travel_sec
 from utils.parking_cost import parse_fee
 from utils.walk_limits import walk_sec_for_leg
 
@@ -38,6 +39,7 @@ class ClusterPlan:
 def _build_parking_first_clusters(
     nodes: list[dict[str, Any]],
     coverage: ParkingCoverage,
+    get_leg: Callable[..., dict[str, Any]],
     on_progress: Callable[[str], None] | None = None,
 ) -> tuple[list[list[int]], dict[int, dict[str, Any]], set[str]]:
     """
@@ -83,7 +85,7 @@ def _build_parking_first_clusters(
             nodes,
             coverage,
             used_ids,
-            get_travel_times,
+            get_leg,
             parking_mode=True,
         )
         if not chosen:
@@ -108,9 +110,11 @@ def build_cluster_plan(
     congestion_level: str = "normal",
     optimization_mode: str = "minimize_walk",
     on_progress: Callable[[str], None] | None = None,
+    get_leg: Callable[..., dict[str, Any]] | None = None,
 ) -> ClusterPlan:
     mode = normalize_optimization_mode(optimization_mode)
     del travel_region  # POI별 카카오 검색 — 지역 문자열 미사용
+    leg_fn = get_leg or get_travel_times
 
     coverage = get_parking_coverage(nodes, on_progress=on_progress)
     candidates = coverage["union"]
@@ -125,7 +129,7 @@ def build_cluster_plan(
 
     if mode == MODE_MINIMIZE_PARKING:
         clusters, pre_parking, _used = _build_parking_first_clusters(
-            nodes, coverage, on_progress=on_progress
+            nodes, coverage, leg_fn, on_progress=on_progress
         )
     else:
         clusters = cluster_by_walk(travel_matrix)
@@ -157,7 +161,7 @@ def build_cluster_plan(
                 parking,
                 nodes,
                 travel_matrix,
-                get_travel_times,
+                leg_fn,
                 congestion_level,
                 parking_mode=True,
                 max_walk_m=PARKING_WALK_MAX_DISTANCE_M,
@@ -179,7 +183,7 @@ def build_cluster_plan(
             nodes,
             candidates,
             used_ids,
-            get_travel_times,
+            leg_fn,
             coverage=coverage,
         )
         comparison = compare_cluster_routing(
@@ -187,7 +191,7 @@ def build_cluster_plan(
             parking,
             nodes,
             travel_matrix,
-            get_travel_times,
+            leg_fn,
             congestion_level,
         )
         cluster_routing[cluster_id] = comparison
@@ -223,6 +227,7 @@ def _inter_cluster_car_sec(
     to_idx: int,
     nodes: list[dict[str, Any]],
     cluster_plan: ClusterPlan,
+    travel_matrix: list[list[dict[str, Any]]],
 ) -> int:
     ci = cluster_plan.node_to_cluster.get(from_idx)
     cj = cluster_plan.node_to_cluster.get(to_idx)
@@ -233,12 +238,10 @@ def _inter_cluster_car_sec(
     use_pj = cluster_plan.cluster_use_parking.get(cj, False) if cj is not None else False
 
     if use_pi and use_pj and pi and pj:
-        leg = get_travel_times(pi["lat"], pi["lng"], pj["lat"], pj["lng"])
-        return int(leg.get("car_time_sec") or 0)
+        est = estimate_travel_sec(pi["lat"], pi["lng"], pj["lat"], pj["lng"], "car")
+        return int(est["time_sec"])
 
-    a, b = nodes[from_idx], nodes[to_idx]
-    leg = get_travel_times(a["lat"], a["lng"], b["lat"], b["lng"])
-    return int(leg.get("car_time_sec") or 0)
+    return int(travel_matrix[from_idx][to_idx].get("car_time_sec") or 0)
 
 
 def build_cluster_aware_cost_matrix(
@@ -294,7 +297,7 @@ def build_cluster_aware_cost_matrix(
                     )
                 continue
 
-            car_sec = _inter_cluster_car_sec(i, j, nodes, cluster_plan)
+            car_sec = _inter_cluster_car_sec(i, j, nodes, cluster_plan, travel_matrix)
             cost = _car_edge_cost(car_sec, minimize_walk) + transition_penalty
 
             parking_i = cluster_plan.cluster_parking.get(ci) if ci is not None else None

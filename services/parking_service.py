@@ -11,6 +11,7 @@ from constants.config import (
     KAKAO_PARKING_MAX_DISTANCE_M,
     KAKAO_PARKING_PER_POI_LIMIT,
     KAKAO_PARKING_PER_POI_RADIUS_M,
+    KAKAO_PARKING_RADIUS_FALLBACK_M,
     KAKAO_PARKING_SEARCH_RADIUS_M,
     KAKAO_PUBLIC_NAME_BONUS,
     PARKING_CANDIDATES_PER_CLUSTER,
@@ -95,32 +96,56 @@ def fetch_tmap_parking_for_poi(
     return results[:limit]
 
 
+def fetch_parking_radii() -> list[int]:
+    radii = [KAKAO_PARKING_PER_POI_RADIUS_M]
+    if KAKAO_PARKING_RADIUS_FALLBACK_M > KAKAO_PARKING_PER_POI_RADIUS_M:
+        radii.append(KAKAO_PARKING_RADIUS_FALLBACK_M)
+    return radii
+
+
 def fetch_parking_for_poi(
     lat: float,
     lng: float,
     place_hint: str = "",
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """POI 좌표 기준 주차장 — 카카오 PK6 우선, 실패·0건이면 TMAP 보완."""
-    try:
-        parks = search_parking_near(
-            lat,
-            lng,
-            radius_m=KAKAO_PARKING_PER_POI_RADIUS_M,
-            max_distance_m=KAKAO_PARKING_PER_POI_RADIUS_M,
-            max_results=KAKAO_PARKING_PER_POI_LIMIT,
-        )
-        if parks:
-            return parks, None
-    except KakaoApiError as exc:
+    """POI 좌표 기준 주차장 — 카카오 PK6 (0.5km→0.8km), 실패·0건이면 TMAP 보완."""
+    last_exc: KakaoApiError | None = None
+    for radius_m in fetch_parking_radii():
+        try:
+            parks = _search_kakao_at_radius(lat, lng, radius_m)
+            if parks:
+                note = None
+                if radius_m > KAKAO_PARKING_PER_POI_RADIUS_M:
+                    note = f"주차장 {radius_m}m 반경으로 확장 검색 ({len(parks)}건)"
+                return parks, note
+        except KakaoApiError as exc:
+            last_exc = exc
+            break
+
+    if last_exc:
         fallback = fetch_tmap_parking_for_poi(lat, lng, place_hint)
         if fallback:
-            return fallback, f"카카오 주차장 API 오류 — TMAP 후보 {len(fallback)}건 사용 ({exc})"
-        return [], str(exc)
+            return fallback, f"카카오 주차장 API 오류 — TMAP 후보 {len(fallback)}건 사용 ({last_exc})"
+        return [], str(last_exc)
 
     fallback = fetch_tmap_parking_for_poi(lat, lng, place_hint)
     if fallback:
         return fallback, f"카카오 주차장 0건 — TMAP 후보 {len(fallback)}건 사용"
     return [], None
+
+
+def _search_kakao_at_radius(
+    lat: float,
+    lng: float,
+    radius_m: int,
+) -> list[dict[str, Any]]:
+    return search_parking_near(
+        lat,
+        lng,
+        radius_m=radius_m,
+        max_distance_m=radius_m,
+        max_results=KAKAO_PARKING_PER_POI_LIMIT,
+    )
 
 
 def fetch_kakao_parking_for_poi(lat: float, lng: float, place_hint: str = "") -> list[dict[str, Any]]:

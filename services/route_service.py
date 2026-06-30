@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from constants.config import MAX_GRAPH_NODES, WALK_TIME_FALLBACK_MINUTES, WALK_TIME_LIMIT_MINUTES
+from constants.config import KNN_EDGE_K, MAX_GRAPH_NODES, WALK_TIME_FALLBACK_MINUTES, WALK_TIME_LIMIT_MINUTES
 from models.visit_rule import RULE_IMMEDIATE
 from optimizer.constraint_builder import map_rules_to_indices
 from optimizer.fallback_solver import greedy_route_order
+from optimizer.haversine_matrix import build_haversine_travel_matrix
+from optimizer.knn_graph import apply_knn_forbidden_costs, build_knn_edge_set
 from optimizer.parking_graph import ClusterPlan, build_cluster_aware_cost_matrix, build_cluster_plan
 from optimizer.ortools_solver import solve_route_order
 from optimizer.route_reconstruction import _split_order_into_legs, build_parking_aware_route
+from optimizer.route_refine import refine_travel_matrix
 from optimizer.scoring import build_route_summary
-from services.map_service import apply_walk_limit, build_travel_matrix
+from services.map_service import apply_walk_limit, get_haversine_travel_times
 from services.parking_service import get_parking_coverage
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.time_utils import check_reservation_feasible, hhmm_to_minutes
@@ -220,8 +223,133 @@ def optimize_route(
     user_end_fixed = end_idx is not None
     congestion_level = congestion_level or "normal"
 
-    progress("1/4 이동시간 계산 중…")
-    travel_matrix = build_travel_matrix(nodes, on_progress=on_progress)
+    progress("1/4 직선 거리 그래프 구성…")
+    haversine_matrix = build_haversine_travel_matrix(nodes)
+
+    progress("2/4 주차장 검색·클러스터…")
+    cluster_plan = build_cluster_plan(
+        nodes,
+        haversine_matrix,
+        travel_region,
+        congestion_level,
+        mode,
+        on_progress=on_progress,
+        get_leg=get_haversine_travel_times,
+    )
+    coverage_notes = get_parking_coverage(nodes).get("search_notes") or []
+    for note in coverage_notes[:2]:
+        if note not in warnings:
+            warnings.append(note)
+
+    coords = [(float(node["lat"]), float(node["lng"])) for node in nodes]
+    knn_edges = build_knn_edge_set(coords, k=KNN_EDGE_K, cluster_plan=cluster_plan)
+    cost_matrix = build_cluster_aware_cost_matrix(
+        haversine_matrix, cluster_plan, nodes, mode, congestion_level
+    )
+    sparse_cost = apply_knn_forbidden_costs(cost_matrix, knn_edges)
+
+    trip_start_minutes = hhmm_to_minutes(trip_start_time) or 9 * 60
+    reservation_by_index: dict[int, int] = {}
+    for i, node in enumerate(nodes):
+        res = node.get("reservation_time")
+        if res:
+            res_min = hhmm_to_minutes(res)
+            if res_min is not None:
+                reservation_by_index[i] = res_min
+
+    mapped_rules = map_rules_to_indices(visit_rules or [], id_to_index)
+
+    progress("3/4 방문 순서 최적화 (OR-Tools)…")
+    order, resolved_start, resolved_end = _solve_order_flexible(
+        sparse_cost,
+        start_idx,
+        end_idx,
+        haversine_matrix,
+        mapped_rules,
+        reservation_by_index or None,
+        trip_start_minutes,
+    )
+    start_idx = resolved_start if resolved_start is not None else start_idx
+    end_idx = resolved_end if resolved_end is not None else end_idx
+    planning_matrix = haversine_matrix
+
+    if not order:
+        relaxed_matrix = apply_walk_limit(haversine_matrix, WALK_TIME_FALLBACK_MINUTES)
+        relaxed_plan = build_cluster_plan(
+            nodes,
+            relaxed_matrix,
+            travel_region,
+            congestion_level,
+            mode,
+            on_progress=on_progress,
+            get_leg=get_haversine_travel_times,
+        )
+        relaxed_knn = build_knn_edge_set(coords, k=KNN_EDGE_K, cluster_plan=relaxed_plan)
+        relaxed_cost = apply_knn_forbidden_costs(
+            build_cluster_aware_cost_matrix(
+                relaxed_matrix, relaxed_plan, nodes, mode, congestion_level
+            ),
+            relaxed_knn,
+        )
+        order, _, _ = _solve_order_flexible(
+            relaxed_cost,
+            start_idx,
+            end_idx,
+            relaxed_matrix,
+            mapped_rules,
+            reservation_by_index or None,
+            trip_start_minutes,
+        )
+        if order:
+            planning_matrix = relaxed_matrix
+            cluster_plan = relaxed_plan
+            sparse_cost = relaxed_cost
+            warnings.append(
+                f"도보 {WALK_TIME_LIMIT_MINUTES}분 제한으로 경로를 찾지 못해 "
+                f"{WALK_TIME_FALLBACK_MINUTES}분으로 완화했습니다. (ER-006)"
+            )
+
+    if not order and len(mapped_rules) > len(_immediate_rules_only(mapped_rules)):
+        immediate_only = _immediate_rules_only(mapped_rules)
+        order, _, _ = _solve_order_flexible(
+            sparse_cost,
+            start_idx,
+            end_idx,
+            planning_matrix,
+            immediate_only,
+            reservation_by_index or None,
+            trip_start_minutes,
+        )
+        if order:
+            mapped_rules = immediate_only
+            warnings.append(
+                "「다음(순서만)」 방문 규칙을 완화하고 「바로 다음」 규칙만 적용했습니다. (ER-006)"
+            )
+
+    if not order:
+        order, g_start, g_end = _greedy_order_flexible(
+            sparse_cost, start_idx, end_idx, mapped_rules
+        )
+        if order:
+            start_idx = g_start if g_start is not None else start_idx
+            end_idx = g_end if g_end is not None else end_idx
+            warnings.append(
+                "OR-Tools 최적화에 실패해 가까운 순서(휴리스틱) 경로를 사용했습니다. (ER-007)"
+            )
+
+    if not order:
+        raise RouteOptimizationError(
+            "조건을 만족하는 경로를 찾을 수 없습니다. "
+            "방문 규칙·예약 시간·장소 간 거리를 확인해 주세요. (ER-006)"
+        )
+
+    travel_matrix = refine_travel_matrix(
+        nodes,
+        order,
+        cluster_plan,
+        planning_matrix,
+        on_progress=on_progress,
+    )
     car_estimated_legs = sum(
         1
         for row in travel_matrix
@@ -255,101 +383,6 @@ def optimize_route(
             f"TMAP 도보 경로 API 오류로 {walk_estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다."
         )
 
-    cluster_plan = build_cluster_plan(
-        nodes, travel_matrix, travel_region, congestion_level, mode, on_progress=on_progress
-    )
-    coverage_notes = get_parking_coverage(nodes).get("search_notes") or []
-    for note in coverage_notes[:2]:
-        if note not in warnings:
-            warnings.append(note)
-    cost_matrix = build_cluster_aware_cost_matrix(
-        travel_matrix, cluster_plan, nodes, mode, congestion_level
-    )
-
-    trip_start_minutes = hhmm_to_minutes(trip_start_time) or 9 * 60
-    reservation_by_index: dict[int, int] = {}
-    for i, node in enumerate(nodes):
-        res = node.get("reservation_time")
-        if res:
-            res_min = hhmm_to_minutes(res)
-            if res_min is not None:
-                reservation_by_index[i] = res_min
-
-    mapped_rules = map_rules_to_indices(visit_rules or [], id_to_index)
-
-    progress("4/4 경로 최적화 (OR-Tools)…")
-    order, resolved_start, resolved_end = _solve_order_flexible(
-        cost_matrix,
-        start_idx,
-        end_idx,
-        travel_matrix,
-        mapped_rules,
-        reservation_by_index or None,
-        trip_start_minutes,
-    )
-    start_idx = resolved_start if resolved_start is not None else start_idx
-    end_idx = resolved_end if resolved_end is not None else end_idx
-
-    if not order:
-        relaxed_matrix = apply_walk_limit(travel_matrix, WALK_TIME_FALLBACK_MINUTES)
-        relaxed_plan = build_cluster_plan(
-            nodes, relaxed_matrix, travel_region, congestion_level, mode, on_progress=on_progress
-        )
-        relaxed_cost = build_cluster_aware_cost_matrix(
-            relaxed_matrix, relaxed_plan, nodes, mode, congestion_level
-        )
-        order, _, _ = _solve_order_flexible(
-            relaxed_cost,
-            start_idx,
-            end_idx,
-            relaxed_matrix,
-            mapped_rules,
-            reservation_by_index or None,
-            trip_start_minutes,
-        )
-        if order:
-            travel_matrix = relaxed_matrix
-            cluster_plan = relaxed_plan
-            cost_matrix = relaxed_cost
-            warnings.append(
-                f"도보 {WALK_TIME_LIMIT_MINUTES}분 제한으로 경로를 찾지 못해 "
-                f"{WALK_TIME_FALLBACK_MINUTES}분으로 완화했습니다. (ER-006)"
-            )
-
-    if not order and len(mapped_rules) > len(_immediate_rules_only(mapped_rules)):
-        immediate_only = _immediate_rules_only(mapped_rules)
-        order, _, _ = _solve_order_flexible(
-            cost_matrix,
-            start_idx,
-            end_idx,
-            travel_matrix,
-            immediate_only,
-            reservation_by_index or None,
-            trip_start_minutes,
-        )
-        if order:
-            mapped_rules = immediate_only
-            warnings.append(
-                "「다음(순서만)」 방문 규칙을 완화하고 「바로 다음」 규칙만 적용했습니다. (ER-006)"
-            )
-
-    if not order:
-        order, g_start, g_end = _greedy_order_flexible(
-            cost_matrix, start_idx, end_idx, mapped_rules
-        )
-        if order:
-            start_idx = g_start if g_start is not None else start_idx
-            end_idx = g_end if g_end is not None else end_idx
-            warnings.append(
-                "OR-Tools 최적화에 실패해 가까운 순서(휴리스틱) 경로를 사용했습니다. (ER-007)"
-            )
-
-    if not order:
-        raise RouteOptimizationError(
-            "조건을 만족하는 경로를 찾을 수 없습니다. "
-            "방문 규칙·예약 시간·장소 간 거리를 확인해 주세요. (ER-006)"
-        )
-
     res_errors = check_reservation_feasible(order, nodes, travel_matrix, trip_start_minutes)
     if res_errors:
         raise RouteOptimizationError("\n".join(res_errors))
@@ -373,7 +406,7 @@ def optimize_route(
     )
 
     # 주차 거점 경로 안내 — 실제 경로에 주차장이 반영된 경우만
-    progress("4/4 경로 재구성 중…")
+    progress("4/4 경로 재구성…")
     stops, segments, parkings = build_parking_aware_route(
         order,
         nodes,
