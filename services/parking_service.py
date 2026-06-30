@@ -18,12 +18,11 @@ from constants.config import (
     PARKING_NEARBY_RADIUS_M,
     PARKING_SCORE_DIST_WEIGHT,
     PARKING_SCORE_FEE_WEIGHT,
-    PARKING_TMAP_VALIDATE_LIMIT,
+    HUB_CLUSTER_ATTEMPT_LIMIT,
     PARKING_WALK_MAX_DISTANCE_M,
 )
 from utils.geo import haversine_m
 from utils.parking_cost import parse_fee
-from utils.walk_limits import walk_leg_ok_distance
 
 # POI별 카카오 검색 + 겹침 인덱스
 ParkingCoverage = dict[str, Any]
@@ -149,7 +148,7 @@ def _search_kakao_at_radius(
 
 
 def fetch_kakao_parking_for_poi(lat: float, lng: float, place_hint: str = "") -> list[dict[str, Any]]:
-    """POI 좌표 기준 카카오 PK6 — 반경 1km, 상위 20건."""
+    """POI 좌표 기준 카카오 PK6 — 반경 0.5km(→0.8km), 상위 20건."""
     parks, _ = fetch_parking_for_poi(lat, lng, place_hint)
     return parks
 
@@ -229,9 +228,16 @@ def get_parking_candidates(places: list[dict[str, Any]], region: str = "") -> li
     return get_parking_coverage(places)["union"]
 
 
-def tmap_parking_validate_limit(place_count: int) -> int:
+def hub_cluster_attempt_limit(place_count: int) -> int:
+    """2/4 hub 선정 진행 표시용 상한 (직선 거리·카카오 겹침만 사용)."""
     n = max(2, place_count)
-    return min(PARKING_TMAP_VALIDATE_LIMIT, max(6, 2 + n))
+    return min(HUB_CLUSTER_ATTEMPT_LIMIT, max(6, 2 + n))
+
+
+# (미사용) TMAP 도보 정밀 검사 상한 — hub_cluster_attempt_limit 로 대체
+# def tmap_parking_validate_limit(place_count: int) -> int:
+#     n = max(2, place_count)
+#     return min(PARKING_TMAP_VALIDATE_LIMIT, max(6, 2 + n))
 
 
 def shared_hub_candidates(
@@ -288,11 +294,12 @@ def pick_hub_for_cluster(
     nodes: list[dict[str, Any]],
     coverage: ParkingCoverage,
     used_ids: set[str],
-    get_walk_leg: Callable[..., dict[str, Any]],
+    _get_walk_leg: Callable[..., dict[str, Any]],
     *,
     parking_mode: bool = False,
 ) -> dict[str, Any] | None:
-    """겹치는 hub 후보 상위 N개 중 TMAP(또는 직선) 검증 후 1곳 선택."""
+    """겹치는 hub 후보 상위 N개 중 직선 거리 조건으로 1곳 선택 (_get_walk_leg: API 호환용)."""
+    del _get_walk_leg
     if not poi_indices:
         return None
 
@@ -409,24 +416,25 @@ def pick_parking_for_places(
     )
 
 
-def assign_parking_to_clusters(
-    places: list[dict[str, Any]],
-    cluster_indices: list[list[int]],
-    region: str,
-) -> list[dict[str, Any]]:
-    coverage = get_parking_coverage(places)
-    candidates = coverage["union"]
-    used_ids: set[str] = set()
-    assignments: list[dict[str, Any]] = []
-
-    from services.map_service import get_travel_times
-
-    for indices in cluster_indices:
-        if not indices:
-            continue
-        chosen = pick_parking_for_places(
-            indices, places, candidates, used_ids, get_travel_times, coverage=coverage
-        )
-        if chosen:
-            assignments.append(chosen)
-    return assignments
+# (미사용) POI별 검색·build_cluster_plan 으로 대체 — 메인 경로에서 호출하지 않음
+# def assign_parking_to_clusters(
+#     places: list[dict[str, Any]],
+#     cluster_indices: list[list[int]],
+#     region: str,
+# ) -> list[dict[str, Any]]:
+#     coverage = get_parking_coverage(places)
+#     candidates = coverage["union"]
+#     used_ids: set[str] = set()
+#     assignments: list[dict[str, Any]] = []
+#
+#     from services.map_service import get_travel_times
+#
+#     for indices in cluster_indices:
+#         if not indices:
+#             continue
+#         chosen = pick_parking_for_places(
+#             indices, places, candidates, used_ids, get_travel_times, coverage=coverage
+#         )
+#         if chosen:
+#             assignments.append(chosen)
+#     return assignments

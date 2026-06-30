@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Any
 
 import streamlit as st
 
@@ -27,7 +28,14 @@ def _progress_fraction(msg: str) -> float:
             return 0.4
         return 0.1
     if msg.startswith("2/4"):
-        return 0.42 if "완료" in msg else 0.38
+        if "완료" in msg:
+            return 0.42
+        try:
+            part = msg.split("(")[1].split(")")[0]
+            done_s, total_s = part.split("/")
+            return 0.22 + int(done_s) / max(1, int(total_s)) * 0.18
+        except (IndexError, ValueError):
+            return 0.32
     if msg.startswith("3/4"):
         try:
             part = msg.split("(")[1].split(")")[0]
@@ -40,6 +48,40 @@ def _progress_fraction(msg: str) -> float:
     if "재구성" in msg:
         return 0.9
     return 0.1
+
+
+def _start_optimization_job() -> dict[str, Any]:
+    st.session_state.pop("parking_candidates_cache", None)
+    st.session_state.pop("parking_coverage_cache", None)
+    st.session_state.pop("_route_explanation", None)
+    st.session_state.pop("_route_explanation_key", None)
+
+    job: dict[str, Any] = {
+        "started": time.time(),
+        "msg": "준비 중…",
+        "done": False,
+        "route": None,
+        "error": None,
+        "error_kind": None,
+    }
+
+    def worker() -> None:
+        def on_progress(msg: str) -> None:
+            job["msg"] = msg
+
+        try:
+            job["route"] = run_optimization(on_progress=on_progress)
+        except RouteOptimizationError as exc:
+            job["error_kind"] = "route"
+            job["error"] = str(exc)
+        except Exception as exc:
+            job["error_kind"] = "generic"
+            job["error"] = str(exc)
+        finally:
+            job["done"] = True
+
+    threading.Thread(target=worker, daemon=True, name="route-optimization").start()
+    return job
 
 
 def render() -> None:
@@ -58,61 +100,49 @@ def render() -> None:
     )
     st.caption("창을 닫지 마세요. 지도·주차장 데이터를 불러오는 중입니다.")
 
-    started = time.time()
-    progress = st.progress(0, text="준비 중…")
+    job = st.session_state.get("_loading_job")
+    if job is None:
+        job = _start_optimization_job()
+        st.session_state._loading_job = job
+
+    progress = st.progress(0, text=job["msg"])
     status = st.empty()
-    st.session_state.pop("parking_candidates_cache", None)
-    st.session_state.pop("parking_coverage_cache", None)
-    st.session_state.pop("_route_explanation", None)
-    st.session_state.pop("_route_explanation_key", None)
 
-    last_msg = {"text": "준비 중…"}
-    ticker_stop = threading.Event()
-    ELAPSED_TICK_SEC = 5
-
-    def _render_status() -> None:
-        elapsed = int(time.time() - started)
-        status.caption(f"{last_msg['text']} · {elapsed}초 경과")
-
-    def _elapsed_ticker() -> None:
-        while not ticker_stop.wait(ELAPSED_TICK_SEC):
-            _render_status()
-
-    ticker_thread = threading.Thread(target=_elapsed_ticker, daemon=True)
-    ticker_thread.start()
-
-    def on_progress(msg: str) -> None:
-        last_msg["text"] = msg
-        _render_status()
-        progress.progress(min(0.98, _progress_fraction(msg)), text=msg)
-
-    try:
-        progress.progress(0.02, text="입력 검증")
-        _render_status()
-        with st.status("경로를 계산하고 있습니다…", expanded=True) as run_status:
-            route = run_optimization(on_progress=on_progress)
-            run_status.update(label="계산 완료", state="complete", expanded=False)
-        finalize_success(route)
-        progress.progress(1.0, text="완료!")
+    if job["done"]:
+        st.session_state.pop("_loading_job", None)
+        progress.empty()
         status.empty()
+
+        if job["error_kind"] == "route":
+            st.error(job["error"])
+            if st.button("← 입력 수정"):
+                st.session_state.input_step = "trip"
+                go_to("input")
+                st.rerun()
+            return
+
+        if job["error_kind"] == "generic":
+            st.error(f"최적화 중 오류가 발생했습니다: {job['error']}")
+            if st.button("← 입력 수정"):
+                st.session_state.input_step = "trip"
+                go_to("input")
+                st.rerun()
+            return
+
+        finalize_success(job["route"])
         go_to("result")
         st.rerun()
+        return
 
-    except RouteOptimizationError as exc:
-        progress.empty()
-        status.empty()
-        st.error(str(exc))
-        if st.button("← 입력 수정"):
-            st.session_state.input_step = "trip"
-            go_to("input")
-            st.rerun()
-    except Exception as exc:
-        progress.empty()
-        status.empty()
-        st.error(f"최적화 중 오류가 발생했습니다: {exc}")
-        if st.button("← 입력 수정"):
-            st.session_state.input_step = "trip"
-            go_to("input")
-            st.rerun()
-    finally:
-        ticker_stop.set()
+    elapsed = int(time.time() - job["started"])
+    msg = job["msg"]
+    status.caption(f"{msg} · {elapsed}초 경과")
+    progress.progress(min(0.98, _progress_fraction(msg)), text=msg)
+
+    with st.status("경로를 계산하고 있습니다…", expanded=True):
+        st.caption(f"현재 단계: {msg}")
+        st.caption(f"경과 {elapsed}초")
+
+    # Streamlit은 메인 스크립트가 끝나야 화면이 갱신됨 → 1초마다 rerun
+    time.sleep(1)
+    st.rerun()

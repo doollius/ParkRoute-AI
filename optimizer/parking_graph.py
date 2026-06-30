@@ -19,7 +19,7 @@ from services.parking_service import (
     pick_hub_for_cluster,
     score_parking,
     select_parking_for_cluster,
-    tmap_parking_validate_limit,
+    hub_cluster_attempt_limit,
 )
 from utils.optimization_mode import MODE_MINIMIZE_PARKING, normalize_optimization_mode
 from utils.geo import estimate_travel_sec
@@ -45,7 +45,7 @@ def _build_parking_first_clusters(
     """
     POI별 카카오 겹침 인덱스로 클러스터 구성.
     1) 여러 POI 목록에 공통 등장하는 주차장으로 그룹 후보 생성
-    2) 그룹마다 겹치는 hub 상위 N개 중 TMAP 검증으로 1곳 확정
+    2) 그룹마다 겹치는 hub 상위 N개 중 직선 거리 조건으로 1곳 확정
     """
     by_id = coverage.get("by_id", {})
     covers: list[tuple[float, int, dict[str, Any], list[int]]] = []
@@ -66,18 +66,18 @@ def _build_parking_first_clusters(
     clusters: list[list[int]] = []
     cluster_parking: dict[int, dict[str, Any]] = {}
     used_ids: set[str] = set()
-    validate_limit = tmap_parking_validate_limit(len(nodes))
-    validated = 0
+    hub_attempt_limit = hub_cluster_attempt_limit(len(nodes))
+    hub_attempts = 0
 
     for _, _count, _parking, indices in covers:
         uncovered = [i for i in indices if i not in assigned]
         if len(uncovered) < 2:
             continue
 
-        if validated < validate_limit and on_progress:
-            validated += 1
+        if hub_attempts < hub_attempt_limit and on_progress:
+            hub_attempts += 1
             on_progress(
-                f"3/4 겹치는 주차장 hub 검증 ({validated}/{validate_limit})…"
+                f"2/4 겹치는 주차장 hub 선정 ({hub_attempts}/{hub_attempt_limit})…"
             )
 
         chosen = pick_hub_for_cluster(

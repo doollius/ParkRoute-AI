@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 import streamlit as st
 
-from api.tmap_api import TmapApiError, get_car_route, get_car_route_matrix, get_walk_route
+from api.tmap_api import TmapApiError, get_car_route, get_walk_route
 from constants.config import PARKING_HAVERSINE_PREFILTER_M, WALK_TIME_LIMIT_MINUTES
 from optimizer.haversine_matrix import haversine_leg
 from utils.geo import coord_key, estimate_travel_sec, haversine_m, is_trivial_route, zero_route_metrics
@@ -235,90 +235,91 @@ def _merge_walk_into_leg(
     }
 
 
-def build_travel_matrix(
-    nodes: list[dict[str, Any]],
-    on_progress: Callable[[str], None] | None = None,
-) -> list[list[dict[str, Any]]]:
-    """(legacy) 전체 N×N — 테스트·호환용. optimize_route는 refine_travel_matrix 사용."""
-    n = len(nodes)
-    coords = [(float(node["lat"]), float(node["lng"])) for node in nodes]
-    matrix: list[list[dict[str, Any]]] = []
-    estimated_count = 0
-    walk_estimated_count = 0
-    car_matrix_estimated = False
-    car_matrix_error: str | None = None
-
-    if on_progress:
-        on_progress("1/4 차량 이동시간 일괄 계산 중…")
-
-    try:
-        car_grid = get_car_route_matrix(coords)
-    except TmapApiError as exc:
-        car_matrix_estimated = True
-        car_matrix_error = str(exc)
-        car_grid = [
-            [
-                zero_route_metrics()
-                if i == j
-                else estimate_travel_sec(coords[i][0], coords[i][1], coords[j][0], coords[j][1], "car")
-                for j in range(n)
-            ]
-            for i in range(n)
-        ]
-
-    walk_jobs = 0
-    for i in range(n):
-        for j in range(n):
-            if i != j and haversine_m(*coords[i], *coords[j]) <= PARKING_HAVERSINE_PREFILTER_M:
-                walk_jobs += 1
-    walk_done = 0
-    total_walk = max(1, walk_jobs)
-
-    for i in range(n):
-        row: list[dict[str, Any]] = []
-        for j in range(n):
-            if i == j:
-                row.append(_empty_leg())
-                continue
-
-            a_lat, a_lng = coords[i]
-            b_lat, b_lng = coords[j]
-            car = {
-                "time_sec": int(car_grid[i][j].get("time_sec") or 0),
-                "distance_m": int(car_grid[i][j].get("distance_m") or 0),
-            }
-            car_estimated = car_matrix_estimated or bool(car_grid[i][j].get("estimated"))
-
-            walk, walk_est, walk_allowed, walk_err = _walk_leg_for_matrix(
-                a_lat, a_lng, b_lat, b_lng
-            )
-            if haversine_m(a_lat, a_lng, b_lat, b_lng) <= PARKING_HAVERSINE_PREFILTER_M:
-                walk_done += 1
-                if on_progress:
-                    pct = min(99, int(walk_done / total_walk * 100))
-                    on_progress(f"1/4 도보 이동시간 계산 중… ({pct}%)")
-
-            leg = _leg_from_parts(
-                car,
-                car_estimated=car_estimated,
-                walk=walk,
-                walk_estimated=walk_est,
-                walk_allowed=walk_allowed,
-                error=car_matrix_error or walk_err,
-            )
-            _cache_leg(a_lat, a_lng, b_lat, b_lng, leg)
-
-            if leg.get("car_estimated") and int(leg.get("car_time_sec") or 0) > 0:
-                estimated_count += 1
-            if leg.get("walk_estimated") and int(leg.get("walk_time_sec") or 0) > 0:
-                walk_estimated_count += 1
-            row.append(leg)
-        matrix.append(row)
-
-    if estimated_count and on_progress:
-        on_progress(f"1/4 이동시간 계산 완료 (차량 구간 추정 {estimated_count}건)")
-    elif walk_estimated_count and on_progress:
-        on_progress(f"1/4 이동시간 계산 완료 (도보 구간 추정 {walk_estimated_count}건)")
-    elif on_progress:
-        on_progress("1/4 이동시간 계산 완료")
-    return matrix
+# (미사용) 전체 N×N TMAP — optimize_route 는 refine_travel_matrix 사용
+# def build_travel_matrix(
+#     nodes: list[dict[str, Any]],
+#     on_progress: Callable[[str], None] | None = None,
+# ) -> list[list[dict[str, Any]]]:
+#     """(legacy) 전체 N×N — 테스트·호환용."""
+#     n = len(nodes)
+#     coords = [(float(node["lat"]), float(node["lng"])) for node in nodes]
+#     matrix: list[list[dict[str, Any]]] = []
+#     estimated_count = 0
+#     walk_estimated_count = 0
+#     car_matrix_estimated = False
+#     car_matrix_error: str | None = None
+#
+#     if on_progress:
+#         on_progress("1/4 차량 이동시간 일괄 계산 중…")
+#
+#     try:
+#         car_grid = get_car_route_matrix(coords)
+#     except TmapApiError as exc:
+#         car_matrix_estimated = True
+#         car_matrix_error = str(exc)
+#         car_grid = [
+#             [
+#                 zero_route_metrics()
+#                 if i == j
+#                 else estimate_travel_sec(coords[i][0], coords[i][1], coords[j][0], coords[j][1], "car")
+#                 for j in range(n)
+#             ]
+#             for i in range(n)
+#         ]
+#
+#     walk_jobs = 0
+#     for i in range(n):
+#         for j in range(n):
+#             if i != j and haversine_m(*coords[i], *coords[j]) <= PARKING_HAVERSINE_PREFILTER_M:
+#                 walk_jobs += 1
+#     walk_done = 0
+#     total_walk = max(1, walk_jobs)
+#
+#     for i in range(n):
+#         row: list[dict[str, Any]] = []
+#         for j in range(n):
+#             if i == j:
+#                 row.append(_empty_leg())
+#                 continue
+#
+#             a_lat, a_lng = coords[i]
+#             b_lat, b_lng = coords[j]
+#             car = {
+#                 "time_sec": int(car_grid[i][j].get("time_sec") or 0),
+#                 "distance_m": int(car_grid[i][j].get("distance_m") or 0),
+#             }
+#             car_estimated = car_matrix_estimated or bool(car_grid[i][j].get("estimated"))
+#
+#             walk, walk_est, walk_allowed, walk_err = _walk_leg_for_matrix(
+#                 a_lat, a_lng, b_lat, b_lng
+#             )
+#             if haversine_m(a_lat, a_lng, b_lat, b_lng) <= PARKING_HAVERSINE_PREFILTER_M:
+#                 walk_done += 1
+#                 if on_progress:
+#                     pct = min(99, int(walk_done / total_walk * 100))
+#                     on_progress(f"1/4 도보 이동시간 계산 중… ({pct}%)")
+#
+#             leg = _leg_from_parts(
+#                 car,
+#                 car_estimated=car_estimated,
+#                 walk=walk,
+#                 walk_estimated=walk_est,
+#                 walk_allowed=walk_allowed,
+#                 error=car_matrix_error or walk_err,
+#             )
+#             _cache_leg(a_lat, a_lng, b_lat, b_lng, leg)
+#
+#             if leg.get("car_estimated") and int(leg.get("car_time_sec") or 0) > 0:
+#                 estimated_count += 1
+#             if leg.get("walk_estimated") and int(leg.get("walk_time_sec") or 0) > 0:
+#                 walk_estimated_count += 1
+#             row.append(leg)
+#         matrix.append(row)
+#
+#     if estimated_count and on_progress:
+#         on_progress(f"1/4 이동시간 계산 완료 (차량 구간 추정 {estimated_count}건)")
+#     elif walk_estimated_count and on_progress:
+#         on_progress(f"1/4 이동시간 계산 완료 (도보 구간 추정 {walk_estimated_count}건)")
+#     elif on_progress:
+#         on_progress("1/4 이동시간 계산 완료")
+#     return matrix

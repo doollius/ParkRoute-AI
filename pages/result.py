@@ -128,6 +128,7 @@ def render() -> None:
             st.session_state.pop("tmap_route_cache", None)
             st.session_state.pop("_route_explanation", None)
             st.session_state.pop("_route_explanation_key", None)
+            st.session_state.pop("_loading_job", None)
             go_to("loading")
             st.rerun()
 
