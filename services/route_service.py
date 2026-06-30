@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from constants.config import KNN_EDGE_K, MAX_GRAPH_NODES, WALK_TIME_FALLBACK_MINUTES, WALK_TIME_LIMIT_MINUTES
+from constants.config import (
+    KNN_EDGE_K,
+    MAX_GRAPH_NODES,
+    ORTOOLS_ENDPOINT_CANDIDATE_LIMIT,
+    WALK_TIME_FALLBACK_MINUTES,
+    WALK_TIME_LIMIT_MINUTES,
+)
 from models.visit_rule import RULE_IMMEDIATE
 from optimizer.constraint_builder import map_rules_to_indices
 from optimizer.fallback_solver import greedy_route_order
@@ -78,6 +84,48 @@ def _parking_warnings(
     return ["근처 주차장을 찾지 못해 주차 없이 경로를 표시합니다. (ER-008)"]
 
 
+def _endpoint_candidate_pairs(
+    n: int,
+    start_idx: int | None,
+    end_idx: int | None,
+) -> list[tuple[int, int]]:
+    if start_idx is not None and end_idx is not None:
+        return [(start_idx, end_idx)]
+    if start_idx is not None and end_idx is None:
+        return [(start_idx, e) for e in range(n) if e != start_idx]
+    if start_idx is None and end_idx is not None:
+        return [(s, end_idx) for s in range(n) if s != end_idx]
+    return [(s, e) for s in range(n) for e in range(n) if s != e]
+
+
+def _shortlist_endpoint_pairs(
+    cost_matrix: list[list[int]],
+    candidates: list[tuple[int, int]],
+    mapped_rules: list[dict[str, Any]],
+    *,
+    limit: int = ORTOOLS_ENDPOINT_CANDIDATE_LIMIT,
+) -> list[tuple[int, int]]:
+    """greedy 비용으로 (출발, 도착) 후보를 줄여 OR-Tools 호출 횟수를 낮춤."""
+    if len(candidates) <= limit:
+        return candidates
+
+    def route_cost(order: list[int]) -> int:
+        return sum(int(cost_matrix[order[i]][order[i + 1]]) for i in range(len(order) - 1))
+
+    ranked: list[tuple[int, tuple[int, int]]] = []
+    for s, e in candidates:
+        order = greedy_route_order(cost_matrix, s, e, mapped_rules)
+        if not order:
+            continue
+        ranked.append((route_cost(order), (s, e)))
+
+    if not ranked:
+        return candidates[:limit]
+
+    ranked.sort(key=lambda row: row[0])
+    return [pair for _, pair in ranked[:limit]]
+
+
 def _solve_order_flexible(
     cost_matrix: list[list[int]],
     start_idx: int | None,
@@ -107,18 +155,19 @@ def _solve_order_flexible(
         )
         return order, start_idx, end_idx
 
-    candidates: list[tuple[int, int]] = []
-    if start_idx is not None and end_idx is None:
-        candidates = [(start_idx, e) for e in range(n) if e != start_idx]
-    elif start_idx is None and end_idx is not None:
-        candidates = [(s, end_idx) for s in range(n) if s != end_idx]
-    else:
-        candidates = [(s, e) for s in range(n) for e in range(n) if s != e]
+    candidates = _endpoint_candidate_pairs(n, start_idx, end_idx)
+    shortlist = _shortlist_endpoint_pairs(cost_matrix, candidates, mapped_rules)
+    tried: set[tuple[int, int]] = set()
 
     best_order: list[int] | None = None
     best_pair: tuple[int, int] | None = None
     best_cost = float("inf")
-    for s, e in candidates:
+
+    def try_pair(s: int, e: int) -> None:
+        nonlocal best_order, best_pair, best_cost
+        if (s, e) in tried:
+            return
+        tried.add((s, e))
         order = _solve_order(
             cost_matrix,
             s,
@@ -129,12 +178,19 @@ def _solve_order_flexible(
             trip_start_minutes,
         )
         if not order:
-            continue
+            return
         cost = route_cost(order)
         if cost < best_cost:
             best_cost = cost
             best_order = order
             best_pair = (s, e)
+
+    for s, e in shortlist:
+        try_pair(s, e)
+
+    if not best_order:
+        for s, e in candidates:
+            try_pair(s, e)
 
     if best_order and best_pair:
         resolved_start = start_idx if start_idx is not None else best_pair[0]
@@ -161,13 +217,7 @@ def _greedy_order_flexible(
         order = greedy_route_order(cost_matrix, start_idx, end_idx, mapped_rules)
         return order, start_idx, end_idx
 
-    candidates: list[tuple[int, int]] = []
-    if start_idx is not None and end_idx is None:
-        candidates = [(start_idx, e) for e in range(n) if e != start_idx]
-    elif start_idx is None and end_idx is not None:
-        candidates = [(s, end_idx) for s in range(n) if s != end_idx]
-    else:
-        candidates = [(s, e) for s in range(n) for e in range(n) if s != e]
+    candidates = _endpoint_candidate_pairs(n, start_idx, end_idx)
 
     best_order: list[int] | None = None
     best_pair: tuple[int, int] | None = None
@@ -356,11 +406,13 @@ def optimize_route(
         for leg in row
         if leg.get("car_estimated") and int(leg.get("car_time_sec") or 0) > 0
     )
-    walk_estimated_legs = sum(
+    walk_api_failed_legs = sum(
         1
         for row in travel_matrix
         for leg in row
-        if leg.get("walk_estimated") and int(leg.get("walk_time_sec") or 0) > 0
+        if leg.get("walk_estimated")
+        and leg.get("walk_error")
+        and int(leg.get("walk_time_sec") or 0) > 0
     )
     if car_estimated_legs:
         sample_err = next(
@@ -373,14 +425,28 @@ def optimize_route(
             None,
         )
         hint = ""
-        if sample_err and "429" in sample_err:
+        if sample_err and "429" in str(sample_err):
             hint = " TMAP 호출 한도(429)에 걸린 경우 잠시 후 다시 시도해 주세요."
         warnings.append(
             f"TMAP 차량 경로 API 오류로 {car_estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다. (ER-009){hint}"
         )
-    elif walk_estimated_legs:
+    elif walk_api_failed_legs:
+        sample_walk_err = next(
+            (
+                str(leg.get("walk_error"))
+                for row in travel_matrix
+                for leg in row
+                if leg.get("walk_estimated")
+                and leg.get("walk_error")
+                and int(leg.get("walk_time_sec") or 0) > 0
+            ),
+            "",
+        )
+        hint = ""
+        if "429" in sample_walk_err:
+            hint = " TMAP 호출 한도(429)에 걸린 경우 잠시 후 다시 시도해 주세요."
         warnings.append(
-            f"TMAP 도보 경로 API 오류로 {walk_estimated_legs}개 구간을 직선 거리 기반으로 추정했습니다."
+            f"TMAP 도보 경로 API 오류로 {walk_api_failed_legs}개 구간을 직선 거리 기반으로 추정했습니다.{hint}"
         )
 
     res_errors = check_reservation_feasible(order, nodes, travel_matrix, trip_start_minutes)

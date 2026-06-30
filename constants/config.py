@@ -2,6 +2,7 @@ WALK_TIME_LIMIT_MINUTES = 9
 WALK_TIME_FALLBACK_MINUTES = 12
 MAX_GRAPH_NODES = 30
 OPTIMIZATION_TIMEOUT_SEC = 10
+ORTOOLS_ENDPOINT_CANDIDATE_LIMIT = 2  # 출발·도착 미지정 시 greedy 상위 N쌍만 OR-Tools
 
 # Parking optimization (Rules.md SC-004, §6.2)
 PARKING_TRANSITION_PENALTY = 25 * 60 * 10  # inter-cluster edge penalty (car-cost scale)
