@@ -235,7 +235,7 @@ def _merge_walk_into_leg(
     }
 
 
-def get_travel_times(
+def build_travel_matrix(
     nodes: list[dict[str, Any]],
     on_progress: Callable[[str], None] | None = None,
 ) -> list[list[dict[str, Any]]]:

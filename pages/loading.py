@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 
 import streamlit as st
@@ -65,13 +66,29 @@ def render() -> None:
     st.session_state.pop("_route_explanation", None)
     st.session_state.pop("_route_explanation_key", None)
 
-    def on_progress(msg: str) -> None:
+    last_msg = {"text": "준비 중…"}
+    ticker_stop = threading.Event()
+    ELAPSED_TICK_SEC = 5
+
+    def _render_status() -> None:
         elapsed = int(time.time() - started)
-        status.caption(f"{msg} · {elapsed}초 경과")
+        status.caption(f"{last_msg['text']} · {elapsed}초 경과")
+
+    def _elapsed_ticker() -> None:
+        while not ticker_stop.wait(ELAPSED_TICK_SEC):
+            _render_status()
+
+    ticker_thread = threading.Thread(target=_elapsed_ticker, daemon=True)
+    ticker_thread.start()
+
+    def on_progress(msg: str) -> None:
+        last_msg["text"] = msg
+        _render_status()
         progress.progress(min(0.98, _progress_fraction(msg)), text=msg)
 
     try:
         progress.progress(0.02, text="입력 검증")
+        _render_status()
         with st.status("경로를 계산하고 있습니다…", expanded=True) as run_status:
             route = run_optimization(on_progress=on_progress)
             run_status.update(label="계산 완료", state="complete", expanded=False)
@@ -97,3 +114,5 @@ def render() -> None:
             st.session_state.input_step = "trip"
             go_to("input")
             st.rerun()
+    finally:
+        ticker_stop.set()
